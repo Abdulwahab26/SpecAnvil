@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+- **Every jCodeMunch tool mapped**: 40 new MCP tools (83 total): `symbol_complexity`, `file_risk`, `untested_symbols`, `similar_symbols`, `related_symbols`, `extraction_candidates`, `winnow_symbols`, `entry_points`, `signal_chains`, `flow_edges`, `endpoint_impact`, `tectonic_map`, `architecture_metrics`, `repo_health`, `decorator_census`, `dependency_graph`, `find_implementations` (incl. Go implicit interfaces), `check_safety`, `parity_map`, `search_columns`, `symbol_provenance`, `symbol_diff`, `churn_rate`, `digest`, `delivery_metrics`, `render_diagram`, `audit_agent_config`, `runtime_coverage`, `plan_turn`, `suggest_queries`, `session_snapshot`, `tool_stats`, `redaction_log`, `index_status`, `file_tree`, `get_file_content`, `list_workspaces`, `cross_repo_map`, `list_packs`, `add_pack`. Mapping table in `docs/COMPARISON.md`.
+- **Symbol coverage**: config keys (YAML / JSON / TOML / INI / `.env` names only) and documentation sections (Markdown / RST / AsciiDoc). express 712 → 994, fastapi 8,137 → 26,842, gin 1,680 → 1,960.
+- **Starter packs without installing**: 51-pack catalog, `npm:` / `pypi:` / `go:` / `gh:` at any version, `.sfpack` export / import, defensive extraction. CLI: `specforge pack`.
+- **CLI**: `specforge insight …` and `specforge diagram … -o x.html`.
+- **Fixes**: JS `@/` aliases in monorepos resolved inside the importing project's own `src/` (was matching files in other languages); folder targets for `symbol_complexity` / `dependency_graph`; symbol lookups prefer code over keys / sections; embeddings never mixed across models (`index_status` reports drift); first `reindex(full=True)` no longer indexes twice; route handlers requested by tests over HTTP count as tested; full rebuilds clear tables in one pass; Windows quoting for test commands.
+- **Track record**: CI (3 OSes × 3 Pythons, retrieval-eval quality gate, clean wheel smoke test), tag-driven releases, `SECURITY.md`, `CONTRIBUTING.md`; `tests/mcp_v05_tools.py` (also run in CI); 38 unit tests.
+- **Benchmarks**: −66% tokens vs jCodeMunch on its benchmark (5,924 vs 17,581); cold index 0.27 / 3.44 / 0.39 s vs 1.72 / 7.07 / 1.56 s.
+
 ## 0.4.0
 - **Symbol coverage**: variables, constants, type aliases, fields (Python, JS/TS, JVM/C#, Go, PHP), Go struct/interface types and receiver-qualified methods, Rust/C/Ruby declarations (express 269 → 712, fastapi 5,576 → 8,137, gin 1,037 → 1,680).
 - **Code graph**: call sites with receivers, inheritance, package/namespace, resolved import graph (JS/TS incl. CommonJS, Python, Java/Kotlin/C#/PHP, Go, Rust, Ruby).

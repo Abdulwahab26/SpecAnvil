@@ -5,9 +5,9 @@
    "queries": [
     {
      "query": "router route handler",
-     "search_tokens": 153,
-     "fetch_tokens": 297,
-     "total": 450,
+     "search_tokens": 148,
+     "fetch_tokens": 294,
+     "total": 442,
      "fetched": [
       "method Route._handles_method",
       "method Layer.handle_request",
@@ -16,9 +16,9 @@
     },
     {
      "query": "middleware",
-     "search_tokens": 124,
-     "fetch_tokens": 80,
-     "total": 204,
+     "search_tokens": 119,
+     "fetch_tokens": 77,
+     "total": 196,
      "fetched": [
       "variable middleware",
       "variable removedMiddlewares",
@@ -27,9 +27,9 @@
     },
     {
      "query": "error exception",
-     "search_tokens": 132,
-     "fetch_tokens": 215,
-     "total": 347,
+     "search_tokens": 127,
+     "fetch_tokens": 212,
+     "total": 339,
      "fetched": [
       "method Layer.handle_error",
       "function error",
@@ -38,9 +38,9 @@
     },
     {
      "query": "request response",
-     "search_tokens": 136,
-     "fetch_tokens": 231,
-     "total": 367,
+     "search_tokens": 131,
+     "fetch_tokens": 228,
+     "total": 359,
      "fetched": [
       "function sendOptionsResponse",
       "method Layer.handle_request",
@@ -49,18 +49,18 @@
     },
     {
      "query": "param bind",
-     "search_tokens": 126,
-     "fetch_tokens": 485,
-     "total": 611,
+     "search_tokens": 110,
+     "fetch_tokens": 354,
+     "total": 464,
      "fetched": [
+      "method app.param",
       "method req.param",
-      "function paramCallback",
-      "function param"
+      "function paramCallback"
      ]
     }
    ],
-   "index_seconds": 0.31,
-   "total": 1979
+   "index_seconds": 0.27,
+   "total": 1800
   },
   {
    "repo": "fastapi",
@@ -78,13 +78,13 @@
     },
     {
      "query": "middleware",
-     "search_tokens": 200,
-     "fetch_tokens": 382,
-     "total": 582,
+     "search_tokens": 243,
+     "fetch_tokens": 482,
+     "total": 725,
      "fetched": [
       "function FastAPI.middleware",
-      "function middleware",
-      "function run_middleware"
+      "class AsyncExitStackMiddleware",
+      "function AsyncExitStackMiddleware.__init__"
      ]
     },
     {
@@ -111,18 +111,18 @@
     },
     {
      "query": "param bind",
-     "search_tokens": 163,
-     "fetch_tokens": 363,
-     "total": 526,
+     "search_tokens": 171,
+     "fetch_tokens": 235,
+     "total": 406,
      "fetched": [
       "class ParamDetails",
-      "function get_parameterless_sub_dependant",
-      "function add_param_to_fields"
+      "class ParamTypes",
+      "function get_typed_signature"
      ]
     }
    ],
-   "index_seconds": 2.39,
-   "total": 2581
+   "index_seconds": 3.44,
+   "total": 2604
   },
   {
    "repo": "gin",
@@ -140,9 +140,9 @@
     },
     {
      "query": "middleware",
-     "search_tokens": 149,
+     "search_tokens": 148,
      "fetch_tokens": 155,
-     "total": 304,
+     "total": 303,
      "fetched": [
       "function Use",
       "method RouterGroup.Use",
@@ -151,9 +151,9 @@
     },
     {
      "query": "error exception",
-     "search_tokens": 120,
+     "search_tokens": 119,
      "fetch_tokens": 146,
-     "total": 266,
+     "total": 265,
      "fetched": [
       "method errorMsgs.Errors",
       "method Error.Error",
@@ -173,9 +173,9 @@
     },
     {
      "query": "param bind",
-     "search_tokens": 133,
-     "fetch_tokens": 118,
-     "total": 251,
+     "search_tokens": 131,
+     "fetch_tokens": 116,
+     "total": 247,
      "fetched": [
       "method Context.Param",
       "struct Param",
@@ -183,8 +183,8 @@
      ]
     }
    ],
-   "index_seconds": 0.45,
-   "total": 1526
+   "index_seconds": 0.39,
+   "total": 1520
   }
  ],
  "uncapped": [
@@ -193,9 +193,9 @@
    "queries": [
     {
      "query": "router route handler",
-     "search_tokens": 153,
-     "fetch_tokens": 297,
-     "total": 450,
+     "search_tokens": 148,
+     "fetch_tokens": 294,
+     "total": 442,
      "fetched": [
       "method Route._handles_method",
       "method Layer.handle_request",
@@ -204,9 +204,9 @@
     },
     {
      "query": "middleware",
-     "search_tokens": 124,
-     "fetch_tokens": 80,
-     "total": 204,
+     "search_tokens": 119,
+     "fetch_tokens": 77,
+     "total": 196,
      "fetched": [
       "variable middleware",
       "variable removedMiddlewares",
@@ -215,9 +215,9 @@
     },
     {
      "query": "error exception",
-     "search_tokens": 132,
-     "fetch_tokens": 215,
-     "total": 347,
+     "search_tokens": 127,
+     "fetch_tokens": 212,
+     "total": 339,
      "fetched": [
       "method Layer.handle_error",
       "function error",
@@ -226,9 +226,9 @@
     },
     {
      "query": "request response",
-     "search_tokens": 136,
-     "fetch_tokens": 231,
-     "total": 367,
+     "search_tokens": 131,
+     "fetch_tokens": 228,
+     "total": 359,
      "fetched": [
       "function sendOptionsResponse",
       "method Layer.handle_request",
@@ -237,18 +237,18 @@
     },
     {
      "query": "param bind",
-     "search_tokens": 126,
-     "fetch_tokens": 485,
-     "total": 611,
+     "search_tokens": 110,
+     "fetch_tokens": 354,
+     "total": 464,
      "fetched": [
+      "method app.param",
       "method req.param",
-      "function paramCallback",
-      "function param"
+      "function paramCallback"
      ]
     }
    ],
    "index_seconds": 0.29,
-   "total": 1979
+   "total": 1800
   },
   {
    "repo": "fastapi",
@@ -266,13 +266,13 @@
     },
     {
      "query": "middleware",
-     "search_tokens": 200,
-     "fetch_tokens": 382,
-     "total": 582,
+     "search_tokens": 243,
+     "fetch_tokens": 482,
+     "total": 725,
      "fetched": [
       "function FastAPI.middleware",
-      "function middleware",
-      "function run_middleware"
+      "class AsyncExitStackMiddleware",
+      "function AsyncExitStackMiddleware.__init__"
      ]
     },
     {
@@ -299,18 +299,18 @@
     },
     {
      "query": "param bind",
-     "search_tokens": 163,
-     "fetch_tokens": 363,
-     "total": 526,
+     "search_tokens": 171,
+     "fetch_tokens": 235,
+     "total": 406,
      "fetched": [
       "class ParamDetails",
-      "function get_parameterless_sub_dependant",
-      "function add_param_to_fields"
+      "class ParamTypes",
+      "function get_typed_signature"
      ]
     }
    ],
-   "index_seconds": 2.2,
-   "total": 2581
+   "index_seconds": 4.2,
+   "total": 2604
   },
   {
    "repo": "gin",
@@ -328,9 +328,9 @@
     },
     {
      "query": "middleware",
-     "search_tokens": 149,
+     "search_tokens": 148,
      "fetch_tokens": 155,
-     "total": 304,
+     "total": 303,
      "fetched": [
       "function Use",
       "method RouterGroup.Use",
@@ -339,9 +339,9 @@
     },
     {
      "query": "error exception",
-     "search_tokens": 120,
+     "search_tokens": 119,
      "fetch_tokens": 146,
-     "total": 266,
+     "total": 265,
      "fetched": [
       "method errorMsgs.Errors",
       "method Error.Error",
@@ -361,9 +361,9 @@
     },
     {
      "query": "param bind",
-     "search_tokens": 133,
-     "fetch_tokens": 118,
-     "total": 251,
+     "search_tokens": 131,
+     "fetch_tokens": 116,
+     "total": 247,
      "fetched": [
       "method Context.Param",
       "struct Param",
@@ -371,8 +371,8 @@
      ]
     }
    ],
-   "index_seconds": 0.44,
-   "total": 1526
+   "index_seconds": 0.36,
+   "total": 1520
   }
  ]
 }

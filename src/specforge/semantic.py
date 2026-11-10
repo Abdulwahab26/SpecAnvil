@@ -147,20 +147,33 @@ def _norm(v):
 
 
 def has_vectors(ix: CodeIndex) -> bool:
+    """True when there are vectors for the *active* model (vectors from another model are never mixed in)."""
     ix.db.executescript(SCHEMA)
-    return bool(ix.db.execute("SELECT 1 FROM sem_vectors LIMIT 1").fetchone())
+    return bool(ix.db.execute("SELECT 1 FROM sem_vectors WHERE model=? LIMIT 1", (settings(ix)["model"],)).fetchone())
+
+
+def model_drift(ix: CodeIndex) -> dict:
+    """Vectors stored per model: reports which models have vectors and whether the active one needs `specforge embed`."""
+    ix.db.executescript(SCHEMA)
+    active = settings(ix)["model"]
+    have = dict(ix.db.execute("SELECT model, COUNT(*) FROM sem_vectors GROUP BY model").fetchall())
+    total = ix.db.execute(f"SELECT COUNT(*) FROM symbols WHERE kind IN ({','.join('?' * len(KINDS))})", KINDS).fetchone()[0]
+    return {"active_model": active, "vectors_by_model": have, "embeddable_symbols": total,
+            "coverage": round(have.get(active, 0) / total, 3) if total else 0.0,
+            "action": None if have.get(active, 0) >= total * 0.9 else "run `specforge embed` for the active model"}
 
 
 def _matrix(ix: CodeIndex):
+    model = settings(ix)["model"]
     stamp = ix.db.execute("SELECT COUNT(*), MAX(rowid) FROM symbols").fetchone()[0], \
-        ix.db.execute("SELECT COUNT(*) FROM sem_vectors").fetchone()[0]
+        ix.db.execute("SELECT COUNT(*) FROM sem_vectors WHERE model=?", (model,)).fetchone()[0], model
     m = _cache.get("matrix")
     if m and m["stamp"] == stamp:
         return m
     rows = ix.db.execute(
         "SELECT s.id, s.path, s.name, s.qualname, s.kind, s.signature, s.start_line, s.end_line, s.doc, s.tokens, "
         "s.body_hash, v.vec FROM sem_vectors v JOIN symbols s ON s.path=v.path AND s.qualname=v.qualname "
-        "AND s.body_hash=v.body_hash").fetchall()
+        "AND s.body_hash=v.body_hash WHERE v.model=?", (model,)).fetchall()
     try:
         import numpy as np
         mat = np.vstack([np.frombuffer(r["vec"], dtype=np.float32) for r in rows]) if rows else None
@@ -173,7 +186,7 @@ def _matrix(ix: CodeIndex):
 
 def search(ix: CodeIndex, query: str, limit: int = 20, kind: str | None = None) -> list[dict]:
     if not has_vectors(ix):
-        raise ValueError("No embeddings yet. Run `specforge embed` once (downloads a small local model).")
+        raise ValueError("No embeddings for the active model yet. Run `specforge embed` (the first run downloads a small local model).")
     m = _matrix(ix)
     if not m["meta"]:
         return []

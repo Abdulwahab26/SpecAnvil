@@ -61,7 +61,7 @@ def fetch_grammars(langs: list[str]) -> dict:
         cache = None
     return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
             "cache": cache}
-PARSER_VERSION = "6"  # bump to force a full re-index after parser changes
+PARSER_VERSION = "8"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -316,6 +316,16 @@ def _js_assignments(source: str, existing: list[Symbol]) -> list[Symbol]:
 def parse_source(rel_path: str, source: str) -> FileParse:
     fp = _parse_symbols(rel_path, source)
     if fp.parser == "text":
+        from .configkeys import extract_keys, extract_sections
+        for title, crumb, level, start, end in extract_sections(rel_path, fp.language, source):
+            parent = crumb.rsplit(" > ", 1)[0] if " > " in crumb else ""
+            fp.symbols.append(Symbol(name=title, kind="section", qualname=crumb, signature="#" * level + " " + title,
+                                     start_line=start, end_line=end, parent=parent))
+        for key, line, value in extract_keys(rel_path, fp.language, source):
+            name = key.rsplit(".", 1)[-1]
+            fp.symbols.append(Symbol(name=name, kind="key", qualname=key,
+                                     signature=f"{key}: {value}" if value else key, start_line=line, end_line=line,
+                                     parent=key.rsplit(".", 1)[0] if "." in key else ""))
         return fp
     from .extract import extract
     if fp.language in ("javascript", "typescript", "tsx") and "require(" in source:

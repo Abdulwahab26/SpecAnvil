@@ -44,6 +44,43 @@ _ix: CodeIndex | None = None
 _last_refresh = 0.0
 _session = Session(ROOT)
 
+# Every tool is wrapped once: latency, the session query log, and a ledger row even for tools that don't
+# report a token baseline. (functools.wraps keeps the signature, so MCP schemas are unchanged.)
+import contextvars  # noqa: E402
+import functools  # noqa: E402
+
+_CALL = contextvars.ContextVar("specforge_call", default=None)
+_orig_tool = mcp.tool
+
+
+def _timed_tool(*dargs, **dkwargs):
+    register = _orig_tool(*dargs, **dkwargs)
+
+    def wrap(fn):
+        name = dkwargs.get("name") or fn.__name__
+
+        @functools.wraps(fn)
+        def inner(*args, **kwargs):
+            state = {"t0": time.perf_counter(), "recorded": False}
+            token = _CALL.set(state)
+            try:
+                first = next(iter(kwargs.values()), args[0] if args else "")
+                _session.note(name, first)
+                out = fn(*args, **kwargs)
+                if not state["recorded"] and isinstance(out, str):
+                    try:
+                        ix().record(name, out, 0, (time.perf_counter() - state["t0"]) * 1000)
+                    except Exception:  # noqa: BLE001 - stats must never break a tool
+                        pass
+                return out
+            finally:
+                _CALL.reset(token)
+        return register(inner)
+    return wrap
+
+
+mcp.tool = _timed_tool  # type: ignore[method-assign]
+
 
 def ix() -> CodeIndex:
     """Open the index, building it on first use and refreshing incrementally every 20s."""
@@ -71,7 +108,11 @@ def _src(source: str | None) -> CodeIndex:
 
 
 def _done(tool: str, text: str, baseline: int) -> str:
-    ix().record(tool, text, baseline)
+    st = _CALL.get()
+    ms = (time.perf_counter() - st["t0"]) * 1000 if st else None
+    ix().record(tool, text, baseline, ms)
+    if st:
+        st["recorded"] = True
     return text
 
 
@@ -167,6 +208,7 @@ def _render_symbol(i: CodeIndex, r, context_lines: int, focus: str | None, force
             _session.mark(r["id"], r["body_hash"])
     else:
         _session.mark(r["id"], r["body_hash"])
+    _session.labels[r["id"]] = f"{r['path']}::{r['qualname']}"
     return f"{head}{note}\n```\n{body}\n```", i.file_tokens([r["path"]])
 
 
@@ -188,7 +230,7 @@ def get_symbol(ref: str, path: str | None = None, context_lines: int = 0, focus:
 def get_symbols(refs: list[str], focus: str | None = None, force: bool = False, full: bool = False) -> str:
     """Several symbols in one call (ids or names). Same dedupe and focus rules as get_symbol."""
     i = ix()
-    parts, files, base = [], set(), 0
+    parts, files = [], set()
     for ref in refs[:25]:
         try:
             r, err = _resolve_one(i, str(ref), None)
@@ -323,7 +365,12 @@ def project_profile() -> str:
 @mcp.tool()
 def reindex(full: bool = False) -> str:
     """Refresh the index (incremental unless full=True)."""
-    return json.dumps(ix().build(full=full))
+    global _ix, _last_refresh
+    if _ix is None:
+        _ix = CodeIndex(ROOT)
+    stats = _ix.build(full=full and _ix.is_built())  # a first build is already full: never index twice
+    _last_refresh = time.time()
+    return json.dumps(stats)
 
 
 @mcp.tool()
@@ -628,6 +675,343 @@ def add_source(spec: str) -> str:
         raise ToolError(str(e)) from e
 
 
+# ----------------------------------------------------------------------------- insights (complexity, tests, structure)
+
+def _j(obj) -> str:
+    return json.dumps(obj, separators=(",", ":"), default=str)
+
+
+def _run(fn, *a, **k) -> str:
+    try:
+        return _j(fn(*a, **k))
+    except (ValueError, KeyError) as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool()
+def symbol_complexity(target: str, limit: int = 30) -> str:
+    """Cyclomatic complexity, control-block nesting, parameter count and lines for one symbol, or for every function
+    in a file (target = path)."""
+    from . import insights as I
+    return _run(I.symbol_complexity, ix(), target, limit)
+
+
+@mcp.tool()
+def file_risk(path: str) -> str:
+    """Per-symbol risk for one file: complexity, callers, test evidence, churn and size, highest first."""
+    from . import insights as I
+    return _run(I.file_risk, ix(), path)
+
+
+@mcp.tool()
+def untested_symbols(target: str | None = None, limit: int = 50) -> str:
+    """Code with no test evidence (not reachable from tests via the call graph, never named in a test), most
+    complex first. Optional target = folder/module."""
+    from . import insights as I
+    return _run(I.untested_symbols, ix(), target, limit)
+
+
+@mcp.tool()
+def similar_symbols(ref: str | None = None, threshold: float = 0.8, limit: int = 30) -> str:
+    """Near-duplicate functions (MinHash + exact Jaccard over token shingles), repo-wide or for one symbol."""
+    from . import insights as I
+    return _run(I.similar_symbols, ix(), ref, threshold, 6, limit)
+
+
+@mcp.tool()
+def related_symbols(ref: str, limit: int = 15) -> str:
+    """Symbols related to one symbol: shared callers/callees, direct calls, same file, similar names."""
+    from . import insights as I
+    return _run(I.related_symbols, ix(), ref, limit)
+
+
+@mcp.tool()
+def extraction_candidates(limit: int = 20) -> str:
+    """Refactoring opportunities: cross-file duplicates to extract, utilities used by 3+ modules living in one,
+    and functions too complex to keep whole."""
+    from . import insights as I
+    return _run(I.extraction_candidates, ix(), limit)
+
+
+@mcp.tool()
+def decorator_census(limit: int = 40) -> str:
+    """Repo-wide count of decorators / annotations / attributes with examples (routes, DI, jobs, validators...)."""
+    from . import insights as I
+    return _run(I.decorator_census, ix(), limit)
+
+
+@mcp.tool()
+def entry_points(limit: int = 100) -> str:
+    """Where execution starts: framework-registered routes/handlers/jobs/commands and program mains."""
+    from . import insights as I
+    return _run(I.entry_points, ix(), limit)
+
+
+@mcp.tool()
+def signal_chains(entry: str | None = None, max_depth: int = 6, limit: int = 20) -> str:
+    """End-to-end paths entry point -> ... -> leaf through the resolved call graph (all entry points, or one)."""
+    from . import insights as I
+    return _run(I.signal_chains, ix(), entry, max_depth, limit)
+
+
+@mcp.tool()
+def tectonic_map() -> str:
+    """Logical modules discovered from imports + calls (label propagation), their cohesion, and files whose logical
+    home differs from their folder."""
+    from . import insights as I
+    return _run(I.tectonic_map, ix())
+
+
+@mcp.tool()
+def architecture_metrics() -> str:
+    """Module count, dependency depth, fan-in concentration, average fan-out, most depended-on files, module cycles."""
+    from . import insights as I
+    return _run(I.architecture_metrics, ix())
+
+
+@mcp.tool()
+def repo_health() -> str:
+    """Six-axis health radar (complexity, modularity, testing, dead code, documentation, change risk; 0-100) with
+    evidence, trend vs the last run, and what to focus on next."""
+    from . import insights as I
+    return _run(I.repo_health, ix())
+
+
+@mcp.tool()
+def winnow_symbols(kind: str | None = None, path_glob: str | None = None, name_regex: str | None = None,
+                   min_complexity: int = 0, min_callers: int = 0, max_callers: int | None = None,
+                   untested: bool | None = None, exported: bool | None = None, has_doc: bool | None = None,
+                   changed_since: str | None = None, sort_by: str = "complexity", limit: int = 30) -> str:
+    """One query over many signals, e.g. untested functions with complexity >= 8 and 3+ callers changed since main.
+    sort_by: complexity | callers | lines | name."""
+    from . import insights as I
+    return _run(I.winnow, ix(), kind, path_glob, name_regex, min_complexity, min_callers, max_callers, untested,
+                exported, has_doc, changed_since, sort_by, limit)
+
+
+@mcp.tool()
+def suggest_queries() -> str:
+    """Useful next questions for this repo with the exact tool calls (important symbols, hotspots, entry points)."""
+    from . import insights as I
+    return _run(I.suggest_queries, ix())
+
+
+@mcp.tool()
+def plan_turn(query: str, budget_tokens: int = 4000) -> str:
+    """Before reading anything: the symbols most likely relevant to a query (with ids and size), terms that match
+    nothing (negative evidence), and the cheapest next calls within a token budget."""
+    i = ix()
+    hits = i.hybrid_search(query, 12, vector_hits=_vector_hits(i, query))
+    from .index import split_terms as _st
+    misses = [t for t in dict.fromkeys(_st(query).split()) if len(t) > 3 and not i.search(t, limit=1)]
+    plan, used = [], 0
+    for h in hits:
+        cost = h.get("tokens") or 50
+        if used + cost > budget_tokens:
+            continue
+        used += cost
+        plan.append({"id": h["id"], "ref": f"{h['path']}::{h['qualname']}", "tokens": cost})
+    return _j({"read_first": plan, "estimated_tokens": used, "no_match_terms": misses,
+               "next": f"get_symbols({[p['id'] for p in plan[:6]]})" if plan else "repo_map()"})
+
+
+@mcp.tool()
+def endpoint_impact(endpoint: str, depth: int = 3) -> str:
+    """What breaks if an HTTP endpoint changes ('POST /users/signup'): handler, transitive callees, frontend
+    callers of the path, tests and specs that reference it."""
+    from . import insights as I
+    return _run(I.endpoint_impact, ix(), endpoint, depth)
+
+
+@mcp.tool()
+def flow_edges() -> str:
+    """Links a call graph can't see: route -> handler, event emit -> listeners (unhandled / never emitted),
+    constructor dependency injection."""
+    from . import insights as I
+    return _run(I.flow_edges, ix())
+
+
+@mcp.tool()
+def parity_map(left: str, right: str, right_source: str | None = None) -> str:
+    """Migration parity between two trees (e.g. legacy/ vs src/, or this repo vs source='gh:org/old'): matched,
+    missing and new symbols, parity %."""
+    from . import insights as I
+    return _run(I.parity_map, ix(), left, right, _src(right_source) if right_source else None)
+
+
+@mcp.tool()
+def search_columns(query: str = "", limit: int = 60) -> str:
+    """Database columns from ORM models (SQLAlchemy, SQLModel, Django, JPA, EF, Prisma, TypeORM) and SQL migrations."""
+    from . import insights as I
+    return _run(I.search_columns, ix(), query, limit)
+
+
+@mcp.tool()
+def dependency_graph(path: str, depth: int = 1, direction: str = "both") -> str:
+    """File-level imports (out) and importers (in) of a file, up to `depth` hops."""
+    from . import insights as I
+    return _run(I.dependency_graph, ix(), path, depth, direction)
+
+
+@mcp.tool()
+def find_implementations(name: str) -> str:
+    """Concrete implementations of an interface / abstract class / trait (Go implicit interfaces included).
+    Use 'Iface.method' to list the implementing methods."""
+    from . import insights as I
+    return _run(I.find_implementations, ix(), name)
+
+
+@mcp.tool()
+def check_safety(ref: str, action: str = "edit", new_name: str | None = None) -> str:
+    """Preflight before changing code. action: edit | delete | rename (with new_name). Verdict safe/caution/unsafe
+    with reasons: callers, importing files, tests, overrides, framework registration, name collisions."""
+    from . import insights as I
+    return _run(I.check_safety, ix(), ref, action, new_name)
+
+
+# ----------------------------------------------------------------------------- history
+
+@mcp.tool()
+def churn_rate(target: str, days: int = 90) -> str:
+    """Commits, authors and lines changed for a file or a single symbol over a time window."""
+    from . import history as H
+    return _run(H.churn_rate, ix(), target, days)
+
+
+@mcp.tool()
+def symbol_provenance(ref: str) -> str:
+    """Who wrote a symbol, when and WHY: its line-range history, ticket keys, decision-bearing commit messages,
+    and docs/ADRs that mention it."""
+    from . import history as H
+    return _run(H.provenance, ix(), ref)
+
+
+@mcp.tool()
+def symbol_diff(base: str = "HEAD", head: str | None = None) -> str:
+    """Symbols added / removed / modified / renamed between two revisions (head omitted = working tree)."""
+    from . import history as H
+    return _run(H.symbol_diff, ix(), base, head)
+
+
+@mcp.tool()
+def digest(since: str = "1 day ago") -> str:
+    """Stand-up briefing: commits, authors, tickets, new and changed symbols, hotspots touched, tests changed."""
+    from . import history as H
+    return _run(H.digest, ix(), since)
+
+
+@mcp.tool()
+def delivery_metrics(days: int = 30) -> str:
+    """Delivery signals from git: commits/week, change size, fix and revert share, merges, busiest files."""
+    from . import history as H
+    return _run(H.delivery_metrics, ix(), days)
+
+
+# ----------------------------------------------------------------------------- diagrams, audit, ops
+
+@mcp.tool()
+def render_diagram(kind: str, target: str = "", depth: int = 2) -> str:
+    """Mermaid diagram. kind: call (symbol), class (name), deps (file), modules, sequence (entry point), tectonic."""
+    from . import diagrams as D
+    try:
+        return D.render(ix(), kind, target, depth)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool()
+def audit_agent_config() -> str:
+    """Wasted tokens in agent setup: always-loaded instruction size, skill/agent sizes, duplicated rules, stale
+    paths, MCP servers with missing env vars, estimated tool-schema load, concrete fixes."""
+    from . import agentaudit
+    return _j(agentaudit.audit(ROOT))
+
+
+@mcp.tool()
+def runtime_coverage(limit: int = 30) -> str:
+    """From a coverage report (lcov/Cobertura/JaCoCo): hot paths by hit count, functions never executed, histogram."""
+    from . import testing as T
+    return _j(T.runtime_coverage(ix(), limit))
+
+
+@mcp.tool()
+def session_snapshot() -> str:
+    """What this session has already seen (symbols in context, recent queries) plus the snapshot from before the last
+    compaction, so work can continue without re-reading."""
+    return _j({"current": _session.snapshot(), "before_last_compaction": _session.load_previous()})
+
+
+@mcp.tool()
+def tool_stats() -> str:
+    """Per-tool calls, average/p95 latency and average tokens returned (local telemetry, never sent anywhere)."""
+    return _j(ix().tool_stats())
+
+
+@mcp.tool()
+def redaction_log() -> str:
+    """How many secrets were redacted from tool output this session, by kind (values are never stored)."""
+    from .tokens import REDACTIONS
+    return _j(dict(REDACTIONS))
+
+
+@mcp.tool()
+def index_status() -> str:
+    """Index freshness: last indexed, files/symbols, and how many files changed since (0 = fresh)."""
+    return _j(ix().index_status())
+
+
+@mcp.tool()
+def file_tree(prefix: str = "", depth: int = 3) -> str:
+    """Directory tree with file, line and symbol counts per folder (optionally under a prefix)."""
+    from . import insights as I
+    return I.file_tree(ix(), prefix, depth)
+
+
+@mcp.tool()
+def get_file_content(path: str, start_line: int = 1, end_line: int | None = None) -> str:
+    """Raw lines of an indexed file (secrets redacted; secret files refused). Prefer get_symbol / file_outline."""
+    i = ix()
+    f = i.db.execute("SELECT lines, tokens FROM files WHERE path=?", (path,)).fetchone()
+    if not f:
+        raise ToolError(f"Not indexed (or a secret/ignored file): {path}")
+    end = end_line or f["lines"]
+    text = i.read_lines(path, start_line, end)
+    return _done("get_file_content", f"{path}:{start_line}-{end}\n```\n{text}\n```", f["tokens"])
+
+
+@mcp.tool()
+def list_workspaces() -> str:
+    """Monorepo workspaces and sub-projects (npm/pnpm/yarn workspaces, go.work, Cargo, .sln, per-folder manifests)."""
+    from . import insights as I
+    return _run(I.list_workspaces, ix())
+
+
+@mcp.tool()
+def cross_repo_map() -> str:
+    """Package-level map across this repo and every registered source: what each publishes and who imports whom."""
+    from . import insights as I
+    return _run(I.cross_repo_map, ix())
+
+
+@mcp.tool()
+def list_packs() -> str:
+    """Curated starter packs (popular frameworks/SDKs by ecosystem) and whether each is already indexed."""
+    from . import packs as P
+    return _j(P.list_catalog())
+
+
+@mcp.tool()
+def add_pack(spec: str) -> str:
+    """Fetch and index a library's published source without installing it: a catalog name ('react', 'fastapi',
+    'gin') or npm:<name>[@ver], pypi:<name>[@ver], go:<module>[@ver], gh:<owner>/<repo>[@tag]. Downloads public
+    packages only (no repo code is sent); cached per version and usable via source=."""
+    from . import packs as P
+    try:
+        return _j(P.add(spec))
+    except (ValueError, OSError) as e:
+        raise ToolError(f"Could not add pack: {e}") from e
+
+
 # ----------------------------------------------------------------------------- tool tiers
 # Every tool schema costs tokens on every turn. Tiers expose only what a session needs.
 TIERS = {
@@ -637,8 +1021,15 @@ TIERS = {
 TIERS["standard"] = TIERS["core"] | {"search_code", "changed_symbols", "impact_of", "hotspots", "list_specs",
                                      "spec_drift", "project_profile", "get_profile", "reindex", "call_hierarchy",
                                      "class_hierarchy", "search_ast", "plan_refactor", "list_sources"}
+TIERS["standard"] |= {"check_safety", "plan_turn", "find_implementations", "dependency_graph", "get_file_content",
+                       "index_status"}
 TIERS["analysis"] = TIERS["standard"] | {"symbol_importance", "dead_code", "dependency_cycles", "coupling",
-                                         "layer_violations", "pr_risk"}
+                                         "layer_violations", "pr_risk", "symbol_complexity", "file_risk",
+                                         "untested_symbols", "similar_symbols", "related_symbols",
+                                         "extraction_candidates", "signal_chains", "entry_points", "tectonic_map",
+                                         "architecture_metrics", "repo_health", "winnow_symbols", "endpoint_impact",
+                                         "flow_edges", "symbol_provenance", "symbol_diff", "churn_rate",
+                                         "render_diagram", "search_columns", "list_packs", "add_pack"}
 TIER = (os.environ.get("SPECFORGE_TOOLS") or load_config(ROOT).get("tool_tier") or "full").lower()
 if TIER in TIERS:
     for _t in list(mcp._tool_manager._tools if hasattr(mcp, "_tool_manager") else []):

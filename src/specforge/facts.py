@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from functools import lru_cache
-from pathlib import Path
 
 from .detect import analyze_conventions, detect_stack
 from .index import GENERATED_RX, TEST_RX, CodeIndex

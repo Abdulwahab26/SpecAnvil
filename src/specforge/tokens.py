@@ -25,7 +25,14 @@ _SECRET_PATTERNS = [
 ]
 
 
+from collections import Counter  # noqa: E402
+
+REDACTIONS: Counter = Counter()  # per process (= per agent session): kind -> count, never the values
+
+
 def redact(text: str) -> str:
     for pattern, repl in _SECRET_PATTERNS:
-        text = pattern.sub(repl, text)
+        text, n = pattern.subn(repl, text)
+        if n:
+            REDACTIONS[repl.replace("[REDACTED", "").strip(" ]\\12") or "secret"] += n
     return text

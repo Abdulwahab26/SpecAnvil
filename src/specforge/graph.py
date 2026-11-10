@@ -8,6 +8,7 @@ are simply not edges.
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
 from pathlib import PurePosixPath
@@ -58,7 +59,10 @@ class Resolver:
         if spec.startswith("."):
             base = PurePosixPath(src).parent / spec
         elif spec.startswith(("@/", "~/")):
-            base = PurePosixPath("src") / spec[2:]
+            # alias root = the importing file's own src/ folder (monorepos: frontend/src, apps/web/src), else ./src
+            parts = PurePosixPath(src).parts
+            root = PurePosixPath(*parts[:parts.index("src") + 1]) if "src" in parts[:-1] else PurePosixPath("src")
+            base = root / spec[2:]
         elif spec.startswith("/"):
             base = PurePosixPath(spec.lstrip("/"))
         else:
@@ -71,8 +75,14 @@ class Resolver:
         if hit:
             return [hit]
         # alias without src/: try any path ending with the spec
-        tail = spec.lstrip("@~/").lstrip("./")
-        return [v for k, v in self.by_noext.items() if k.endswith("/" + tail)][:1] if spec.startswith(("@/", "~/")) else []
+        if not spec.startswith(("@/", "~/")):
+            return []
+        tail = spec[2:].lstrip("./")
+        cands = [v for k, v in self.by_noext.items() if (k.endswith("/" + tail) or k.endswith("/" + tail + "/index"))
+                 and self.lang.get(v) in ("javascript", "typescript", "tsx", "vue", "svelte")]
+        def shared(v: str) -> int:
+            return len(os.path.commonprefix([v.split("/"), src.split("/")]))
+        return sorted(cands, key=lambda v: (-shared(v), len(v)))[:1]
 
     def _py(self, src: str, line: str) -> list[str]:
         m = PY_FROM_RX.match(line)

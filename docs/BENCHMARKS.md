@@ -24,7 +24,9 @@ What changed (see ADR-3): removed an O(n²) `set()` rebuild in the removal check
 
 ## Head-to-head with jCodeMunch (its own benchmark)
 
-Same pinned repos, same 5 queries, same workflow, tiktoken cl100k: jCodeMunch 17,581 tokens · SpecForge 0.4 **6,086 (−65%)** (0.3: 9,306). Cold index including call/import graphs: express 0.37 s vs 1.72 s, fastapi 2.54 s vs 7.07 s, gin 0.45 s vs 1.56 s. Details and caveats: [COMPARISON.md](COMPARISON.md).
+Same pinned repos, same 5 queries, same workflow, tiktoken cl100k: jCodeMunch 17,581 tokens · SpecForge 0.5 **5,924 (−66%)** (0.4: 6,086; 0.3: 9,306). Cold index through the MCP server, including call/import graphs: express 0.27 s vs 1.72 s, fastapi 3.44 s vs 7.07 s, gin 0.39 s vs 1.56 s. Symbols: 994 / 26,842 / 1,960 vs 1,085 / 13,699 / 1,822 (0.5 adds config keys and doc sections). Details and caveats: [COMPARISON.md](COMPARISON.md).
+
+**Lessons recorded (0.5).** (1) Indexing doc sections first doubled fastapi's index time: a parent section's body contains all its children, so translated docs were tokenised many times over. Sections now contribute only their heading and first 800 characters to the body index (5.6 s → 3.9 s). (2) A first `reindex(full=True)` built the index twice (once on first use, once for the full rebuild), and a full rebuild deleted rows file by file; fixing both took the benchmark's fastapi timing from 9.3 s to 3.4 s.
 
 ## Semantic retrieval (paraphrased tasks, `tests/evals/semantic_fullstack_fastapi.json`)
 
@@ -52,7 +54,8 @@ Baseline = tokens of the whole files the model would otherwise open (≈4 chars/
 |---|---|---|
 | recall@any (symbol in context as body or signature) | 1.00 | 1.00 |
 | recall@full (full body included) | 1.00 | 1.00 |
-| MRR of first expected symbol | 0.86 | 0.83 |
+| MRR of first expected symbol | 0.88 | 0.83 |
+| MRR with local embeddings built (`specforge embed`) | 0.85 | — |
 
 (v0.2 was recall@full 0.92, MRR 0.78; v0.3 added term-coverage ranking, test/example down-ranking and nested-result dedupe.)
 

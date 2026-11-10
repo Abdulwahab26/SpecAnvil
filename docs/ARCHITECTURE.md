@@ -121,8 +121,25 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 
 ### ADR-12: Semantic search as an optional, local, measured layer
 **Decision.** Default search stays lexical (names / signatures). A hybrid mode adds body vocabulary (no download) and, when built, local embeddings (fastembed ONNX or a localhost endpoint), fused by reciprocal rank with weights chosen on two evals. The model is fetched only by the explicit `specforge embed`; query-time loads are offline.
-**Why.** Mixing body vocabulary into the default ranking hurt MRR (0.88 → 0.65), so it lives in its own list. Embeddings lifted paraphrased-task context hits from 3/12 to 8/12 without hurting the main eval.
+**Why.** Mixing body vocabulary into the default ranking hurt MRR (0.88 → 0.65), so it lives in its own list. Embeddings lifted paraphrased-task context hits from 3/12 to 8/12; on the main eval recall stays 1.00 and MRR moves 0.88 → 0.85 (two tasks drop from rank 1–2 to 2–3), a trade accepted for the paraphrase gain. Vectors are stored per model and never mixed: changing the model without re-embedding disables semantic search instead of comparing incompatible vectors.
 
 ### ADR-13: Dependency packs from installed versions instead of curated packs
 **Decision.** `pkg:<name>` indexes the dependency you actually have installed (node_modules, the project virtualenv or current Python, the Go module cache), keyed by version, stored under `~/.specforge/sources`, shared by every repo. The same tools accept `source=`.
 **Trade-off.** Requires the dependency to be installed, which it is in any project that uses it, and that is exactly the version the agent should read.
+
+### ADR-14: Config keys and documentation sections are symbols, ranked below code
+**Decision.** YAML / JSON / TOML / INI / `.env` keys become `key` symbols with dotted paths (values shown for config, never for `.env`; lockfiles skipped; depth and count capped). Markdown / RST / AsciiDoc headings become `section` symbols whose range ends before the next heading of the same level, with a breadcrumb qualname. Both are penalised in ranking unless the query mentions docs, readme or a guide; sections contribute only heading + first 800 characters to the body index.
+**Why.** Agents often need one setting or one section of a long README; fetching the symbol costs a few dozen tokens instead of the whole file. Measured: none of the 15 benchmark picks moved, eval unchanged, fastapi symbols 8,137 → 26,842.
+
+### ADR-15: Analyses as pure functions over the index, with a timed tool wrapper
+**Decision.** The ~40 analysis, history and session tools (`insights.py`, `history.py`, `diagrams.py`, `agentaudit.py`) are pure functions of the SQLite index plus `git`, exposed through one decorator that times every call, records tokens and latency in the ledger, and notes the call in the session. `tool_stats` reads that ledger (calls, avg / p95 ms).
+**Why.** One place for telemetry and error contract (`isError` with a next step), and every analysis is unit-testable without an MCP client. A stdio test (`tests/mcp_v05_tools.py`) calls every tool against a real repo and fails on any error.
+
+### ADR-16: Curated starter packs fetched from registries, extracted defensively
+**Decision.** A 51-entry catalog maps names to `npm:` / `pypi:` / `go:` / `gh:` specs. `specforge pack add` downloads the published archive (size-capped), rejects absolute paths, drive letters and `..` entries **before** prefix stripping, writes only under `~/.specforge/sources/packs`, and registers the result as a source. `.sfpack` files (zip of meta + sources) share packs offline; the recipient indexes locally.
+**Why.** Complements ADR-13: reading a library you have not installed yet (evaluation, upgrades) without running its install scripts. Downloading is an explicit command, never part of indexing. A test feeds a malicious tarball and asserts nothing escapes the target folder.
+
+### ADR-17: Retrieval quality is a CI gate
+**Decision.** CI runs the context eval on a pinned public repo and fails below recall@any 0.95 or MRR 0.75, alongside unit tests on three OSes and three Python versions, and a clean-venv wheel smoke test. Releases are cut from tags with the CHANGELOG section as notes.
+**Why.** Ranking changes regress silently. A number in a README is a claim; a failing build is enforcement (the same principle as ADR-7 and ADR-10).
+

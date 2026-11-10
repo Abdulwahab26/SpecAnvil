@@ -52,7 +52,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, terms, signature
   tokenize='unicode61', prefix='2 3 4');
 CREATE TABLE IF NOT EXISTS summaries(body_hash TEXT PRIMARY KEY, summary TEXT, model TEXT, at REAL);
 CREATE TABLE IF NOT EXISTS vectors(symbol_id INTEGER PRIMARY KEY, body_hash TEXT, dim INT, vec BLOB);
-CREATE TABLE IF NOT EXISTS ledger(ts REAL, tool TEXT, returned INT, baseline INT);
+CREATE TABLE IF NOT EXISTS ledger(ts REAL, tool TEXT, returned INT, baseline INT, ms REAL);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 DATA_TABLES = ("files", "symbols", "imports", "symbols_fts", "calls", "bases", "file_deps", "idents", "vectors")
@@ -139,7 +139,7 @@ def stem(w: str) -> str:
 
 GENERATED_RX = re.compile(r"(\.gen\.|\.generated\.|/generated/|__generated__|\.pb\.|_pb2\.|/migrations?/versions/|"
                           r"\.d\.ts$|/client/(types|sdk|schemas)\.|openapi)", re.I)
-DECL_KINDS = ("variable", "field", "constant", "type", "enum_member")
+DECL_KINDS = ("variable", "field", "constant", "type", "enum_member", "key", "section")
 NONPROD_RX = re.compile(r"(^|/)(examples?|samples?|demos?|docs?|docs_src|benchmarks?|fixtures?|testdata|"
                         r"stories|storybook|playground|scripts|tools)(/|$)", re.I)
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec|e2e)(/|$)|[._](test|spec)\.[a-z]+$|(^|/)test_[^/]+$|Tests?\.\w+$")
@@ -264,11 +264,16 @@ class CodeIndex:
         texts = dict(to_parse)
 
         with self.db:
-            for rel in removed:
-                self._delete_file(rel)
-            self.db.executemany("UPDATE files SET size=?, mtime_ns=? WHERE path=?", touched)
+            wipe = full and only is None  # full rebuild: clear tables once instead of ~8 deletes per file
+            if wipe:
+                for t in ("symbols_fts", "symbols", "imports", "files", "calls", "bases"):
+                    self.db.execute(f"DELETE FROM {t}")  # noqa: S608 - fixed table names
+            else:
+                for rel in removed:
+                    self._delete_file(rel)
+                self.db.executemany("UPDATE files SET size=?, mtime_ns=? WHERE path=?", touched)
             for rel, fp in parsed:
-                self._write_file(rel, texts[rel], fp, *meta[rel])
+                self._write_file(rel, texts[rel], fp, *meta[rel], fresh=wipe)
             self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
             self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
             if parsed or removed:
@@ -349,8 +354,9 @@ class CodeIndex:
         self.db.execute("DELETE FROM calls WHERE path=?", (rel,))
         self.db.execute("DELETE FROM bases WHERE path=?", (rel,))
 
-    def _write_file(self, rel: str, text: str, fp: FileParse, h: str, size: int, mtime_ns: int) -> None:
-        self._delete_file(rel)
+    def _write_file(self, rel: str, text: str, fp: FileParse, h: str, size: int, mtime_ns: int, fresh: bool = False) -> None:
+        if not fresh:
+            self._delete_file(rel)
         lines = text.splitlines()
         self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (rel, fp.language, h, size, mtime_ns, len(lines), estimate_tokens(text),
@@ -372,7 +378,8 @@ class CodeIndex:
                 if doc and not s.doc:  # AI summary (marked with ≈) shown where there is no docstring
                     sym_rows[-1] = sym_rows[-1][:8] + ("≈ " + doc,) + sym_rows[-1][9:]
                 fts_rows.append((sid, s.name, split_terms(s.qualname, rel), s.signature, doc, rel_terms,
-                                 body_terms(body) if s.end_line > s.start_line else ""))
+                                 "" if s.end_line <= s.start_line else
+                                 body_terms(body[:800], 40) if s.kind == "section" else body_terms(body)))
             self.db.executemany("INSERT INTO symbols VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", sym_rows)
             self.db.executemany("INSERT INTO symbols_fts(rowid,name,terms,signature,doc,path,body) VALUES(?,?,?,?,?,?,?)",
                                 fts_rows)
@@ -386,11 +393,45 @@ class CodeIndex:
             self.db.executemany("INSERT INTO bases VALUES(?,?,?)", [(rel, c, b) for c, b in fp.bases])
 
     # ----------------------------------------------------------------- ledger
-    def record(self, tool: str, returned_text: str, baseline_tokens: int) -> None:
+    def record(self, tool: str, returned_text: str, baseline_tokens: int, ms: float | None = None) -> None:
         returned = estimate_tokens(returned_text)
-        self.db.execute("INSERT INTO ledger VALUES(?,?,?,?)",
-                        (time.time(), tool, returned, max(baseline_tokens, returned)))
+        cols = [r[1] for r in self.db.execute("PRAGMA table_info(ledger)")]
+        if "ms" not in cols:
+            self.db.execute("ALTER TABLE ledger ADD COLUMN ms REAL")
+        self.db.execute("INSERT INTO ledger(ts, tool, returned, baseline, ms) VALUES(?,?,?,?,?)",
+                        (time.time(), tool, returned, max(baseline_tokens, returned), ms))
         self.db.commit()
+
+    def tool_stats(self) -> list[dict]:
+        rows = self.db.execute("SELECT tool, ms, returned FROM ledger WHERE ms IS NOT NULL ORDER BY tool").fetchall()
+        by: dict[str, list] = defaultdict(list)
+        for r in rows:
+            by[r["tool"]].append((r["ms"], r["returned"]))
+        out = []
+        for tool, vals in by.items():
+            ms = sorted(v[0] for v in vals)
+            out.append({"tool": tool, "calls": len(ms), "avg_ms": round(sum(ms) / len(ms), 1),
+                        "p95_ms": round(ms[min(len(ms) - 1, int(len(ms) * 0.95))], 1),
+                        "avg_tokens": round(sum(v[1] for v in vals) / len(vals))})
+        return sorted(out, key=lambda x: -x["calls"])
+
+    def index_status(self) -> dict:
+        last = self.db.execute("SELECT value FROM meta WHERE key='last_index'").fetchone()
+        stale = 0
+        stored = {r["path"]: (r["size"], r["mtime_ns"]) for r in self.db.execute("SELECT path, size, mtime_ns FROM files")}
+        for c in iter_candidates(self.root, relaxed=self.relaxed):
+            if stored.get(c.path) != (c.size, c.mtime_ns):
+                stale += 1
+        return {"root": str(self.root), "last_index": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(last[0])))
+                if last else None, "files": len(stored),
+                "symbols": self.db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0],
+                "files_changed_since": stale, "fresh": stale == 0, "embeddings": self._embedding_status()}
+
+    def _embedding_status(self) -> dict | None:
+        if not self.db.execute("SELECT 1 FROM sqlite_master WHERE name='sem_vectors'").fetchone():
+            return None
+        from .semantic import model_drift
+        return model_drift(self)
 
     def savings(self) -> dict:
         rows = self.db.execute("SELECT tool, COUNT(*) n, SUM(returned) r, SUM(baseline) b "
@@ -472,6 +513,7 @@ class CodeIndex:
         rows = [dict(r) for r in self.db.execute(sql, args)]
         ql = query.strip().lower()
         wants_tests = any(t.startswith("test") or t.startswith("spec") for t in terms)
+        wants_docs = bool(re.search(r"\b(docs?|readme|guide|tutorial|section|how to|documentation|faq)\b", ql))
         wants_nonprod = any(t.startswith(("exampl", "sampl", "demo", "doc", "bench", "fixtur")) for t in terms)
         for r in rows:
             name_terms = split_terms(r["qualname"]).split()
@@ -489,6 +531,10 @@ class CodeIndex:
                 adj += 10
             if r["kind"] in DECL_KINDS and r["name"].lower() != ql:
                 adj += 4  # variables/fields/constants: useful, but rarely the answer to a behaviour query
+            if r["kind"] == "section" and not wants_docs:
+                adj += 8  # doc sections answer "how/why" questions; code queries should land on code first
+            elif r["kind"] == "section":
+                adj -= 6  # the query asked for docs/readme/guide
             r["score"] += adj
         rows.sort(key=lambda r: r["score"])
         # drop results nested inside (or containing) a better-ranked result: never pay for the same lines twice

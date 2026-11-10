@@ -1,5 +1,7 @@
 # SpecForge
 
+[![CI](https://github.com/Abdulwahab26/Specforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdulwahab26/Specforge/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
+
 **Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything Claude Code needs to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 13-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
 
 Design notes and decision records: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · measured numbers: [docs/BENCHMARKS.md](docs/BENCHMARKS.md) · head-to-head: [docs/COMPARISON.md](docs/COMPARISON.md)
@@ -12,11 +14,14 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 
 | Measured | Result |
 |---|---|
-| jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **65% fewer tokens** than jCodeMunch |
-| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **3–4× faster** |
+| jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **66% fewer tokens** than jCodeMunch (5,924 vs 17,581) |
+| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **2–6× faster** (0.27 / 3.44 / 0.39 s vs 1.72 / 7.07 / 1.56 s) |
+| Symbols indexed vs jCodeMunch (express / fastapi / gin) | 994 / **26,842** / **1,960** vs 1,085 / 13,699 / 1,822 |
+| jCodeMunch's 98 tool names | **all mapped** to a SpecForge tool, command or built-in behaviour, except 3 diagnostics ([table](docs/COMPARISON.md#5-tools-every-jcodemunch-tool-mapped)) |
+| Starter packs | **51** curated (npm / PyPI / Go / GitHub), fetched from the registry, **no install needed** |
 | Paraphrased tasks in `get_context` with local embeddings | **8/12** found (3/12 keyword-only) |
 | Token savings, 13 typical lookups on [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) | **84% fewer tokens** than reading the files |
-| Retrieval eval (12 tasks, 4k budget) | recall **1.00**, MRR **0.86** |
+| Retrieval eval (12 tasks, 4k budget) | recall **1.00**, MRR **0.88** (CI gate: ≥ 0.95 / ≥ 0.75) |
 | Refresh after an edit on Django (5.6k files) | **0.14 s** (no-op: 0.09 s) |
 | Network calls during indexing | **none** (tested with sockets blocked) |
 
@@ -91,10 +96,31 @@ Agents burn most of their tokens reading whole files to find one function. `spec
 | `doc_plan`, `doc_facts`, `doc_check`, `doc_register` | documentation plan by archetype, grounded facts, completeness gate, freshness lock |
 | `ticket_keys`, `ticket_trace`, `backfill_progress` | ticket keys in git history, ticket → commits → symbols, resumable backfill state |
 | `project_profile`, `get_profile`, `reindex`, `token_savings` | detected stack, your model/backfill profile, refresh, the savings ledger |
+| `symbol_complexity`, `file_risk`, `untested_symbols`, `winnow_symbols` | cyclomatic / nesting / params per symbol or folder, per-symbol risk, code with no test evidence, multi-filter symbol queries |
+| `similar_symbols`, `related_symbols`, `extraction_candidates` | near-duplicate code, symbols that change and are used together, what to extract and why |
+| `entry_points`, `signal_chains`, `flow_edges`, `endpoint_impact` | where execution starts, entry → leaf call chains, route→handler / event emit→listener / DI links, what an endpoint touches incl. frontend callers |
+| `tectonic_map`, `architecture_metrics`, `repo_health`, `decorator_census` | module plates and fault lines, size/depth/fan metrics, six-axis health radar with trend vs last run, decorator usage |
+| `dependency_graph`, `find_implementations`, `check_safety`, `parity_map`, `search_columns` | file or folder imports/importers, implementers (incl. Go implicit interfaces), edit/delete/rename preflight, sibling-module parity, DB columns/fields |
+| `symbol_provenance`, `symbol_diff`, `churn_rate`, `digest`, `delivery_metrics` | git story of a symbol (tickets, decisions), symbols added/changed between refs, churn, what changed since X, delivery stats |
+| `render_diagram`, `audit_agent_config`, `runtime_coverage` | Mermaid call/class/deps/modules/sequence/tectonic, wasted tokens in CLAUDE.md/skills/MCP config, hot and never-executed code from lcov/Cobertura/JaCoCo |
+| `plan_turn`, `suggest_queries`, `session_snapshot`, `tool_stats`, `redaction_log`, `index_status` | budgeted first-turn plan, starter queries, what's already in context (survives compaction), per-tool latency, what was redacted, freshness + embedding-model drift |
+| `file_tree`, `get_file_content`, `list_workspaces`, `cross_repo_map`, `list_packs`, `add_pack` | navigation, line-range reads, other indexed repos and their links, starter packs |
+
+Besides code, the index holds **config keys** (`jobs.build.runs-on`, `scripts.test`, `services.db.image`; `.env` values are never stored) and **documentation sections** (Markdown / RST / AsciiDoc headings, fetchable one section at a time). Both rank below code unless the query asks for docs.
 
 Every call is logged against a *whole-file baseline* so the savings are measured, not claimed. `specforge stats` and `.specforge/report.html` show them.
 
-Tool tiers keep the per-turn schema small: `core` (9 tools, ~1.4k tokens), `standard` (23, ~2.8k), `analysis` (29, ~3.4k), `full` (43, ~5.0k). Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
+### Starter packs (no install)
+
+```bash
+specforge pack list                  # 51 curated: react, next, vue, angular, express, nestjs, fastapi, django, flask, gin, spring-framework, azure-functions-*, …
+specforge pack add react             # fetches the published source from the registry, indexes it locally
+specforge pack add pypi:httpx@0.27.0 # or any npm:/pypi:/go:/gh: package at any version
+specforge pack export npm:react -o react.sfpack   # share a pack offline; `specforge pack import` on the other side
+```
+Archives are extracted with path-traversal, absolute-path and size checks; packs are registered as sources, so every core tool accepts `source="npm:react"`.
+
+Tool tiers keep the per-turn schema small: `core` (9 tools, ~1.4k tokens), `standard` (29, ~3.5k), `analysis` (56, ~6.4k), `full` (83, ~9.0k; jCodeMunch's full surface is ~28k). Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
 
 ## Your profile: models per role
 
@@ -128,7 +154,7 @@ Specs reference code as `` `path::Qualname` ``. `specforge drift` checks each re
 Requires Python 3.10+. Node 18+ (`npx`) and `uv` (`uvx`) are needed only for the connectors that use them.
 
 ```bash
-uv tool install git+https://github.com/YOUR_GITHUB_USER/specforge   # or: pipx install ...
+uv tool install git+https://github.com/Abdulwahab26/Specforge   # or: pipx install git+https://github.com/Abdulwahab26/Specforge
 specforge doctor
 ```
 
@@ -146,6 +172,10 @@ specforge analyze importance|dead|cycles|coupling|layers|risk|hotspots|ast [--pr
 specforge embed [--code-model]          # optional local embeddings (pip install 'specforge[semantic]')
 specforge source add|list|remove pkg:react | gh:owner/repo[@ref] | path:../svc
 specforge watch [--embed]
+specforge pack list | add <name|npm:x|pypi:x|go:x|gh:o/r>[@ver] | export <source> -o x.sfpack | import x.sfpack
+specforge insight health|untested|similar|complexity|extract|entry|chains|tectonic|architecture|decorators|flow|
+                  columns|safety|endpoint|risk-file|provenance|diff|digest|delivery|churn|audit [target]
+specforge diagram call|class|deps|modules|sequence|tectonic [target] [-o diagram.html|.md]
 specforge connect                 # list the connector catalog
 specforge connect jira figma      # add connectors to .mcp.json  (--remove to drop)
 specforge index [--full] | detect | stats | drift [--lock] [--strict] | report | doctor | serve
@@ -176,6 +206,7 @@ flowchart LR
 pip install -e . && pytest -q
 python tests/mcp_smoke.py /path/to/repo     # exercises the core MCP tools over stdio
 python tests/mcp_new_tools.py /path/to/repo # test, backfill and profile tools
+python tests/mcp_v05_tools.py /path/to/repo # every analysis/history/session tool, fails on any tool error
 python tests/evals/run_context_eval.py <repo> tests/evals/context_fullstack_fastapi.json
 ```
 

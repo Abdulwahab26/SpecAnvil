@@ -444,6 +444,76 @@ def cmd_analyze(args) -> int:
     return 0
 
 
+def cmd_pack(args) -> int:
+    from . import packs
+    try:
+        if args.action == "list":
+            for p in packs.list_catalog():
+                print(f"  {'✔' if p['installed'] else '·'} {p['pack']:<26} {p['source']:<40} {p['about']}")
+            return 0
+        if not args.spec:
+            print("usage: specforge pack add|export|import <spec|source|file> [-o out.sfpack]", file=sys.stderr)
+            return 1
+        if args.action == "add":
+            res = packs.add(args.spec)
+        elif args.action == "export":
+            res = packs.export(args.spec, Path(args.out or (re.sub(r"[^\w.@-]+", "_", args.spec) + ".sfpack")))
+        else:
+            res = packs.import_pack(Path(args.spec))
+    except (ValueError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps(res, indent=2))
+    return 0
+
+
+def cmd_insight(args) -> int:
+    from . import agentaudit, history, insights
+    from .index import CodeIndex
+    ix = CodeIndex(_root(args))
+    ix.build()
+    w, t = args.what, args.target
+    fn = {
+        "health": lambda: insights.repo_health(ix), "untested": lambda: insights.untested_symbols(ix, t, args.limit),
+        "similar": lambda: insights.similar_symbols(ix, t, args.threshold, 6, args.limit),
+        "complexity": lambda: insights.symbol_complexity(ix, t, args.limit) if t else insights.symbol_complexity_all(ix, 10, args.limit),
+        "extract": lambda: insights.extraction_candidates(ix, args.limit), "entry": lambda: insights.entry_points(ix, args.limit),
+        "chains": lambda: insights.signal_chains(ix, t, 6, args.limit), "tectonic": lambda: insights.tectonic_map(ix),
+        "architecture": lambda: insights.architecture_metrics(ix), "decorators": lambda: insights.decorator_census(ix, args.limit),
+        "flow": lambda: insights.flow_edges(ix), "columns": lambda: insights.search_columns(ix, t or "", args.limit),
+        "safety": lambda: insights.check_safety(ix, t, args.action or "edit", args.new_name),
+        "endpoint": lambda: insights.endpoint_impact(ix, t), "risk-file": lambda: insights.file_risk(ix, t),
+        "provenance": lambda: history.provenance(ix, t), "diff": lambda: history.symbol_diff(ix, t or "HEAD"),
+        "digest": lambda: history.digest(ix, t or "1 day ago"), "delivery": lambda: history.delivery_metrics(ix, args.days),
+        "churn": lambda: history.churn_rate(ix, t, args.days), "audit": lambda: agentaudit.audit(ix.root),
+    }.get(w)
+    if fn is None:
+        print("unknown insight", file=sys.stderr)
+        return 1
+    try:
+        print(json.dumps(fn(), indent=1, default=str))
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_diagram(args) -> int:
+    from . import diagrams
+    from .index import CodeIndex
+    ix = CodeIndex(_root(args))
+    ix.build()
+    mm = diagrams.render(ix, args.kind, args.target or "", args.depth)
+    if args.out:
+        out = Path(args.out)
+        out.write_text(diagrams.to_html(mm, f"{args.kind} {args.target or ''}") if out.suffix == ".html"
+                       else f"```mermaid\n{mm}\n```\n", encoding="utf-8")
+        print(out)
+    else:
+        print(mm)
+    return 0
+
+
 def cmd_doctor(args) -> int:
     root = _root(args)
     checks = []
@@ -551,7 +621,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("embed", help="build local embeddings for semantic search (one-time model download)")
     p.add_argument("path", nargs="?")
-    p.add_argument("--code-model", action="store_true", help=f"use a code-trained model (larger download)")
+    p.add_argument("--code-model", action="store_true", help="use a code-trained model (larger download)")
     p.set_defaults(fn=cmd_embed)
 
     p = sub.add_parser("source", help="index dependencies / external repos: add|list|remove <spec>")
@@ -573,6 +643,33 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--base", default="HEAD")
     p.add_argument("--preset")
     p.set_defaults(fn=cmd_analyze)
+
+    p = sub.add_parser("pack", help="starter packs without installing: list | add <name|npm:|pypi:|go:|gh:> | export | import")
+    p.add_argument("action", choices=["list", "add", "export", "import"])
+    p.add_argument("spec", nargs="?")
+    p.add_argument("-o", "--out")
+    p.set_defaults(fn=cmd_pack)
+
+    p = sub.add_parser("insight", help="health | untested | similar | complexity | extract | entry | chains | tectonic | "
+                                       "architecture | decorators | flow | columns | safety | endpoint | risk-file | "
+                                       "provenance | diff | digest | delivery | churn | audit")
+    p.add_argument("what")
+    p.add_argument("target", nargs="?")
+    p.add_argument("--path")
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--threshold", type=float, default=0.8)
+    p.add_argument("--days", type=int, default=90)
+    p.add_argument("--action", choices=["edit", "delete", "rename"])
+    p.add_argument("--new-name")
+    p.set_defaults(fn=cmd_insight)
+
+    p = sub.add_parser("diagram", help="Mermaid: call | class | deps | modules | sequence | tectonic  (-o x.html / x.md)")
+    p.add_argument("kind")
+    p.add_argument("target", nargs="?")
+    p.add_argument("--path")
+    p.add_argument("--depth", type=int, default=2)
+    p.add_argument("-o", "--out")
+    p.set_defaults(fn=cmd_diagram)
 
     p = sub.add_parser("hook", help="internal: Claude Code hook handler")
     p.add_argument("event")

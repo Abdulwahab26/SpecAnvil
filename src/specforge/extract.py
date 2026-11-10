@@ -8,7 +8,6 @@ already known, which keeps it language-agnostic and fast (see docs/BENCHMARKS.md
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 
 KEYWORDS = set("""

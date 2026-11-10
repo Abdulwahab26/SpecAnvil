@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "specforge"
-version = "0.4.0"
+version = "0.5.0"
 description = "Turn any repo into spec-driven development in one command: a token-saving code-index MCP, project-tailored skills, agent team, and lifecycle commands from grooming to Playwright E2E."
 readme = "README.md"
 license = { text = "MIT" }

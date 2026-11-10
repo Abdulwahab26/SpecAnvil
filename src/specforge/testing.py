@@ -11,6 +11,7 @@ Split of responsibilities (cost-aware model routing):
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -280,7 +281,8 @@ def update_milestone(root: Path, module: str, milestone_id: str, status: str, no
         test_file = m["test_file"]
         if not (root / test_file).exists():
             raise ValueError(f"Cannot mark done: {test_file} does not exist.")
-        cmd = plan["test_command"].replace("{test_file}", shlex.quote(test_file))
+        quoted = subprocess.list2cmdline([test_file]) if os.name == "nt" else shlex.quote(test_file)
+        cmd = plan["test_command"].replace("{test_file}", quoted)
         try:
             proc = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True, timeout=timeout)
             passed, tail = proc.returncode == 0, (proc.stdout + proc.stderr)[-1500:]
@@ -302,3 +304,35 @@ def update_milestone(root: Path, module: str, milestone_id: str, status: str, no
     return {"accepted": True, "milestone": milestone_id, "status": status,
             "next": nxt["id"] if nxt else None,
             "progress": f"{sum(x['status'] == 'done' for x in plan['milestones'])}/{len(plan['milestones'])} done"}
+
+
+def runtime_coverage(ix: CodeIndex, limit: int = 30) -> dict:
+    """Map a coverage report (lcov / Cobertura / JaCoCo) onto symbols: hot paths by hit count, code that never
+    executed, and a coverage histogram."""
+    cov, src = load_coverage(ix.root)
+    if not cov:
+        return {"coverage_source": None, "note": "No coverage report found. Run your tests with coverage "
+                "(pytest --cov --cov-report=xml, vitest --coverage, jest --coverage, dotnet test /p:CollectCoverage=true)."}
+    rows = ix.db.execute("SELECT id, path, qualname, kind, start_line, end_line FROM symbols WHERE kind IN "
+                         "('function','method')").fetchall()
+    hot, cold, buckets = [], [], [0] * 5
+    for r in rows:
+        lines = cov.get(r["path"]) or next((v for k, v in cov.items() if r["path"].endswith(k)), None)
+        if not lines:
+            continue
+        hits = [h for ln, h in lines.items() if r["start_line"] <= ln <= r["end_line"]]
+        if not hits:
+            continue
+        pct = sum(1 for h in hits if h > 0) / len(hits)
+        buckets[min(4, int(pct * 5))] += 1
+        ref = f"{r['path']}::{r['qualname']}"
+        if max(hits) == 0:
+            cold.append({"ref": ref, "lines": r["end_line"] - r["start_line"] + 1})
+        else:
+            hot.append({"ref": ref, "max_hits": max(hits), "covered_pct": round(100 * pct, 1)})
+    hot.sort(key=lambda x: -x["max_hits"])
+    cold.sort(key=lambda x: -x["lines"])
+    return {"coverage_source": src, "symbols_measured": len(hot) + len(cold),
+            "histogram": {"0-20%": buckets[0], "20-40%": buckets[1], "40-60%": buckets[2], "60-80%": buckets[3],
+                          "80-100%": buckets[4]},
+            "hot_paths": hot[:limit], "never_executed": cold[:limit]}

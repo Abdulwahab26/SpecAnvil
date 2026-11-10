@@ -1,0 +1,81 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e . pytest
+      - name: Prefetch the grammars the tests use
+        run: specforge grammars python javascript typescript tsx java go --path .
+      - run: pytest -q
+
+  evals:
+    name: retrieval evals (quality gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Fetch the eval corpus at a pinned commit
+        run: |
+          git init corpus && cd corpus
+          git remote add origin https://github.com/fastapi/full-stack-fastapi-template
+          git fetch --depth 50 origin ${{ env.CORPUS_SHA }}
+          git checkout FETCH_HEAD
+        env:
+          CORPUS_SHA: aabb90126964a164e02aff39e7c385bb0598236d  # the commit the published numbers were measured on
+      - run: specforge grammars python typescript tsx javascript --path corpus
+      - name: Context retrieval must stay at or above the published bar
+        run: |
+          python tests/evals/run_context_eval.py corpus tests/evals/context_fullstack_fastapi.json | tee eval.txt
+          python - <<'PY'
+          import re
+          line = open("eval.txt").read().strip().splitlines()[-1]
+          recall = float(re.search(r"recall@any ([\d.]+)", line).group(1))
+          mrr = float(re.search(r"MRR ([\d.]+)", line).group(1))
+          print(f"recall@any={recall} MRR={mrr}")
+          assert recall >= 0.95, "retrieval recall regressed"
+          assert mrr >= 0.75, "ranking quality regressed"
+          PY
+      - name: Paraphrase eval (lexical + hybrid, no model download)
+        run: python tests/evals/run_semantic_eval.py corpus tests/evals/semantic_fullstack_fastapi.json
+      - name: Every analysis, history and session tool over MCP stdio (fails on any tool error)
+        run: python tests/mcp_v05_tools.py corpus
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build && python -m build
+      - name: Smoke-test the built wheel in a clean venv
+        run: |
+          python -m venv /tmp/v && /tmp/v/bin/pip install dist/*.whl
+          mkdir /tmp/demo && cd /tmp/demo && git init -q
+          printf 'def add(a, b):\n    return a + b\n' > calc.py
+          /tmp/v/bin/specforge init --offline
+          test -f .mcp.json && test -f CLAUDE.md && test -d .claude/agents
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
