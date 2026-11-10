@@ -1,6 +1,6 @@
 # SpecForge
 
-**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything Claude Code needs to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 12-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
+**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything Claude Code needs to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 13-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
 
 Design notes and decision records: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · measured numbers: [docs/BENCHMARKS.md](docs/BENCHMARKS.md) · head-to-head: [docs/COMPARISON.md](docs/COMPARISON.md)
 
@@ -12,10 +12,11 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 
 | Measured | Result |
 |---|---|
-| jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **47% fewer tokens** than jCodeMunch (31% with full bodies) |
-| Cold index vs jCodeMunch (express / fastapi / gin) | **5–7× faster** |
+| jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **65% fewer tokens** than jCodeMunch |
+| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **3–4× faster** |
+| Paraphrased tasks in `get_context` with local embeddings | **8/12** found (3/12 keyword-only) |
 | Token savings, 13 typical lookups on [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) | **84% fewer tokens** than reading the files |
-| Retrieval eval (12 tasks, 4k budget) | recall **1.00**, MRR **0.88** |
+| Retrieval eval (12 tasks, 4k budget) | recall **1.00**, MRR **0.86** |
 | Refresh after an edit on Django (5.6k files) | **0.14 s** (no-op: 0.09 s) |
 | Network calls during indexing | **none** (tested with sockets blocked) |
 
@@ -28,10 +29,10 @@ your-repo/
 ├── CLAUDE.md                    # SpecForge block added (your content is kept)
 ├── .mcp.json                    # specforge + matching connectors (no secrets; ${ENV} refs)
 ├── .claude/
-│   ├── commands/sf/             # 19 commands (below)
+│   ├── commands/sf/             # 21 commands (below)
 │   ├── agents/                  # spec-analyst, architect, frontend/backend engineer, db-optimizer,
 │   │                            # qa-engineer, e2e-tester, reviewer, unit-test-planner,
-│   │                            # unit-test-executor, ticket-archaeologist, doc-writer
+│   │                            # unit-test-executor, ticket-archaeologist, doc-writer, summarizer
 │   ├── skills/                  # code-navigation, spec-writing, test-case-design,
 │   │                            # playwright-e2e, db-optimization (only your engines),
 │   │                            # <repo>-conventions, frontend-patterns, backend-patterns
@@ -64,6 +65,8 @@ Everything is **detected, not configured**: languages (300+ via tree-sitter, reg
 | `/sf:test-run <module>` | unit-test-executor (**your executor model**) | Implements milestones one by one; "done" is accepted only when the tool re-runs the tests and they pass; ambiguity is escalated as `blocked`, never improvised |
 | `/sf:backfill` | ticket-archaeologist | Opt-in: pulls Done / In Progress / In Review tickets through your ticket MCP and writes linked specs, resumable, in parallel batches |
 | `/sf:docs [missing\|stale\|all\|ids]` | doc-writer (**your docs model**) | Detects the repo type(s) and writes every required document (up to 25 for an Azure Functions repo) from locally extracted facts: endpoints, functions + triggers, settings, routes, test inventory, models, infra. `specforge docs check` enforces sections, full coverage (every endpoint/function/setting mentioned), no placeholders, valid links; docs go **stale** automatically when the code they describe changes |
+| `/sf:analyze` | — | Architecture health: PageRank importance, hotspots, cycles, coupling, layer violations, dead code, risky AST patterns, with refactor plans |
+| `/sf:summarize` | summarizer (**your summarizer model**) | One-line summaries for undocumented code, written into the index (cached by code hash) to sharpen search and outlines |
 | `/sf:profile` | — | Show or change your models per role and backfill settings |
 | `/sf:spec`, `/sf:status`, `/sf:learn` | — | Quick spec for small changes; board of all features; AI enrichment of the generated specs and skills |
 
@@ -74,10 +77,15 @@ Agents burn most of their tokens reading whole files to find one function. `spec
 | Tool | Returns |
 |---|---|
 | `repo_map` | modules and key symbols with `file:line` |
+| `search_symbols(mode=)` | lexical, hybrid (body vocabulary + embeddings, RRF) or semantic; `auto` falls back to hybrid on weak matches |
 | `get_symbol(s)` | exact source; **already-sent bodies return a one-line reference** (session dedupe, reset on compaction); large symbols return a skeleton; `focus=` excerpts |
 | `get_context(task, budget)` | ranked, budgeted code for a task: full bodies for the best matches, signatures for the rest (stemming, synonyms like *endpoint → route/controller*, generated code and tests down-ranked) |
 | `search_symbols`, `file_outline`, `get_symbol` | symbol search, signatures only, one exact symbol |
 | `find_references`, `impact_of`, `changed_symbols`, `hotspots` | usages with enclosing symbol, transitive dependents, symbols touched by a diff, complexity × churn |
+| `call_hierarchy`, `class_hierarchy`, `symbol_importance`, `dead_code` | resolved call graph both ways, inheritance up/down, PageRank, verified unused code |
+| `dependency_cycles`, `coupling`, `layer_violations`, `pr_risk` | import cycles, Ca/Ce/instability, wrong-way dependencies, 0–1 change risk with review tips |
+| `search_ast`, `plan_refactor` | tree-sitter structural queries + 10 anti-pattern presets; reviewable rename/signature/move edit plans |
+| `summaries_needed`, `save_summaries`, `list_sources`, `add_source` | AI summaries via your Claude; dependency packs and external repos (`source=` on the core tools) |
 | `read_spec(path, section)`, `list_specs`, `spec_drift` | section-level spec reads and drift checks |
 | `test_surface`, `validate_test_plan`, `next_test_milestone`, `update_test_milestone` | unit-test analysis and the enforced milestone workflow |
 | `doc_plan`, `doc_facts`, `doc_check`, `doc_register` | documentation plan by archetype, grounded facts, completeness gate, freshness lock |
@@ -86,7 +94,7 @@ Agents burn most of their tokens reading whole files to find one function. `spec
 
 Every call is logged against a *whole-file baseline* so the savings are measured, not claimed. `specforge stats` and `.specforge/report.html` show them.
 
-Tool tiers keep the per-turn schema small: `core` (9 tools, ~1.1k tokens), `standard` (18, ~1.8k), `full` (29, ~3.1k). Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
+Tool tiers keep the per-turn schema small: `core` (9 tools, ~1.4k tokens), `standard` (23, ~2.8k), `analysis` (29, ~3.4k), `full` (43, ~5.0k). Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
 
 ## Your profile: models per role
 
@@ -134,6 +142,10 @@ specforge profile [set|unset|sync] ...   # your models per role and backfill set
 specforge tests surface|validate|status <module>
 specforge grammars [--list]              # explicit, one-time grammar download
 specforge docs plan|status|check [--strict]|facts <id>
+specforge analyze importance|dead|cycles|coupling|layers|risk|hotspots|ast [--preset X]
+specforge embed [--code-model]          # optional local embeddings (pip install 'specforge[semantic]')
+specforge source add|list|remove pkg:react | gh:owner/repo[@ref] | path:../svc
+specforge watch [--embed]
 specforge connect                 # list the connector catalog
 specforge connect jira figma      # add connectors to .mcp.json  (--remove to drop)
 specforge index [--full] | detect | stats | drift [--lock] [--strict] | report | doctor | serve

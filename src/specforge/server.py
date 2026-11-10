@@ -59,24 +59,36 @@ def ix() -> CodeIndex:
     return _ix
 
 
+def _src(source: str | None) -> CodeIndex:
+    """The main repo index, or an external source (pkg:<name>, gh:<owner>/<repo>, path:<dir>)."""
+    if not source:
+        return ix()
+    from . import sources as _sources
+    try:
+        return _sources.open_source(source)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+
+
 def _done(tool: str, text: str, baseline: int) -> str:
     ix().record(tool, text, baseline)
     return text
 
 
 @mcp.tool()
-def repo_map(max_modules: int = 25) -> str:
-    """Compact map of the repo: languages, modules, and key types/functions with file:line. Start here."""
-    i = ix()
+def repo_map(max_modules: int = 25, source: str | None = None) -> str:
+    """Compact map of the repo: languages, modules, and key types/functions with file:line. Start here.
+    source='pkg:react' / 'gh:owner/repo' maps an indexed dependency or external repo instead."""
+    i = _src(source)
     text, files = i.overview_with_files(max_modules=max_modules)
     # baseline: only the files you'd have to open to learn the same symbols
     return _done("repo_map", text, i.file_tokens(files))
 
 
 @mcp.tool()
-def file_outline(path: str) -> str:
+def file_outline(path: str, source: str | None = None) -> str:
     """Symbols of one file (signatures, line ranges, ids, imports) without bodies."""
-    i = ix()
+    i = _src(source)
     o = i.outline(path)
     if not o:
         raise ToolError(f"Not indexed: {path}. Check the path with search_symbols, or call reindex if the file is new.")
@@ -87,15 +99,37 @@ def file_outline(path: str) -> str:
 
 
 @mcp.tool()
-def search_symbols(query: str, kind: str | None = None, path_prefix: str | None = None, limit: int = 15) -> str:
-    """Ranked symbol search (names, camel/snake parts, signatures, docs, paths). kind: class|function|method|interface..."""
-    i = ix()
-    rows = i.search(query, kind=kind, path_prefix=path_prefix, limit=limit)
+def search_symbols(query: str, kind: str | None = None, path_prefix: str | None = None, limit: int = 15,
+                   mode: str = "auto", source: str | None = None) -> str:
+    """Ranked symbol search. mode: lexical (names/signatures), hybrid (+ body vocabulary + embeddings if built),
+    semantic (embeddings only, for paraphrased intent), auto (lexical, falling back to hybrid when matches are weak).
+    kind: class|function|method|interface|variable|constant|field|type. source: search a dependency/external repo."""
+    i = _src(source)
+    if mode == "semantic":
+        from . import semantic as _sem
+        try:
+            rows = _sem.search(i, query, limit=limit, kind=kind)
+        except (ValueError, ImportError) as e:
+            raise ToolError(f"{e} Install with: pip install 'specforge[semantic]'") from e
+    elif mode == "hybrid":
+        rows = i.hybrid_search(query, limit, kind, path_prefix, _vector_hits(i, query))
+    else:
+        rows = i.search(query, kind=kind, path_prefix=path_prefix, limit=limit)
+        if mode == "auto" and (not rows or rows[0]["score"] > -12):  # weak lexical evidence
+            rows = i.hybrid_search(query, limit, kind, path_prefix, _vector_hits(i, query))
     if not rows:
         return "No matches. Try other words, or search_code for raw text."
     text = "\n".join(f"[{r['id']}] {r['kind']} {r['qualname']} — {r['signature']}  ({r['path']}:{r['start_line']})"
                      + (f"  # {r['doc']}" if r["doc"] else "") for r in rows)
     return _done("search_symbols", text, i.file_tokens(r["path"] for r in rows[:5]))
+
+
+def _vector_hits(i: CodeIndex, query: str):
+    try:
+        from . import semantic as _sem
+        return _sem.search(i, query, 60) if _sem.has_vectors(i) else None
+    except Exception:  # noqa: BLE001 - embeddings are optional
+        return None
 
 
 def _resolve_one(i: CodeIndex, ref: str, path: str | None):
@@ -138,11 +172,11 @@ def _render_symbol(i: CodeIndex, r, context_lines: int, focus: str | None, force
 
 @mcp.tool()
 def get_symbol(ref: str, path: str | None = None, context_lines: int = 0, focus: str | None = None,
-               force: bool = False, full: bool = False) -> str:
+               force: bool = False, full: bool = False, source: str | None = None) -> str:
     """Exact source of one symbol. ref = id, name, Class.method or 'path::Qualname'. Very large symbols come back
     as a skeleton (full=true for everything); focus='words' returns the signature and matching lines. Bodies
     already sent this session return a short reference unless force=true."""
-    i = ix()
+    i = _src(source)
     r, err = _resolve_one(i, ref, path)
     if err:
         return err
@@ -172,10 +206,10 @@ def get_symbols(refs: list[str], focus: str | None = None, force: bool = False, 
 
 
 @mcp.tool()
-def get_context(task: str, budget_tokens: int | None = None) -> str:
+def get_context(task: str, budget_tokens: int | None = None, source: str | None = None) -> str:
     """Best code for a task within a token budget: full bodies of the most relevant symbols, signatures for the rest.
-    Code already sent this session is referenced, not resent, so the budget goes to new code."""
-    i = ix()
+    Uses embeddings too when built. Code already sent this session is referenced, not resent."""
+    i = _src(source)
     text, files = i.context_for(task, budget_tokens, delivered=_session.ledger())
     return _done("get_context", text, i.file_tokens(files))
 
@@ -447,6 +481,153 @@ def get_profile() -> str:
     return json.dumps(_profile.effective(ROOT), separators=(",", ":"))
 
 
+# ----------------------------------------------------------------------------- structural analysis
+
+def _sid(i: CodeIndex, ref: str) -> int:
+    r, err = _resolve_one(i, ref, None)
+    if err:
+        raise ToolError(err)
+    return r["id"]
+
+
+@mcp.tool()
+def call_hierarchy(ref: str, direction: str = "callers", depth: int = 2) -> str:
+    """Who calls a function (direction='callers') or what it calls ('callees'), transitively, with call lines.
+    Calls are resolved by scope: same file, imported files, receiver (crud.create_user), unique name."""
+    from . import graph as _g
+    i = ix()
+    return _done("call_hierarchy", _g.call_hierarchy(i, _sid(i, ref), direction, depth), 0)
+
+
+@mcp.tool()
+def class_hierarchy(name: str) -> str:
+    """Ancestors (extends/implements, through the repo) and all descendants of a class/interface/trait."""
+    from . import graph as _g
+    return json.dumps(_g.class_hierarchy(ix(), name), separators=(",", ":"))
+
+
+@mcp.tool()
+def symbol_importance(limit: int = 25) -> str:
+    """Most central symbols by PageRank over the resolved call graph, with caller counts. Where changes hurt most."""
+    from . import graph as _g
+    return json.dumps(_g.importance(ix(), limit), separators=(",", ":"))
+
+
+@mcp.tool()
+def dead_code(limit: int = 50, include_exported: bool = False) -> str:
+    """Unreferenced functions, classes, variables and constants: no resolved callers AND no other occurrence of
+    the name anywhere in code (verified by a word search). Decorated/registered and framework hooks excluded."""
+    from . import graph as _g
+    return json.dumps(_g.dead_code(ix(), limit, include_exported), separators=(",", ":"))
+
+
+@mcp.tool()
+def dependency_cycles(level: str = "file") -> str:
+    """Import cycles (strongly connected components), level='file' or 'module'."""
+    from . import graph as _g
+    return json.dumps(_g.cycles(ix(), level), separators=(",", ":"))
+
+
+@mcp.tool()
+def coupling(limit: int = 30) -> str:
+    """Per-module afferent/efferent coupling and instability, with what each module depends on and is used by."""
+    from . import graph as _g
+    return json.dumps(_g.coupling(ix(), limit), separators=(",", ":"))
+
+
+@mcp.tool()
+def layer_violations() -> str:
+    """Dependencies that point the wrong way between layers (presentation > application > infrastructure >
+    domain by default; configure 'layers' in .specforge/config.json)."""
+    from . import graph as _g
+    return json.dumps(_g.layer_violations(ix()), separators=(",", ":"))
+
+
+@mcp.tool()
+def pr_risk(base: str = "HEAD") -> str:
+    """0-1 risk for the current change vs a git ref: complexity, callers (blast radius), test exposure, churn,
+    size per changed symbol, with concrete review tips."""
+    from . import graph as _g
+    i = ix()
+    i.build()
+    return json.dumps(_g.pr_risk(i, base), separators=(",", ":"))
+
+
+@mcp.tool()
+def search_ast(preset: str | None = None, query: str | None = None, language: str | None = None,
+               path_glob: str | None = None, limit: int = 50) -> str:
+    """Structural search with tree-sitter queries. Presets: empty-catch, broad-except, debug-print, eval-exec,
+    sql-string-build, await-in-loop, mutable-default, hardcoded-secret, nested-loops, todo-comment. Or pass a raw
+    tree-sitter S-expression query (capture @hit) with language=."""
+    from . import astsearch as _a
+    try:
+        return json.dumps(_a.search(ix(), query, preset, language, path_glob, limit), separators=(",", ":"))
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool()
+def plan_refactor(kind: str, ref: str, new_name: str | None = None, new_signature: str | None = None,
+                  target_path: str | None = None) -> str:
+    """Exact, reviewable edit plans (nothing is written). kind='rename' (new_name): every in-scope code occurrence
+    as old/new line pairs plus conflicts; 'signature' (new_signature): every call site and override; 'move'
+    (target_path): imports to update and dependencies to carry."""
+    from . import refactor as _r
+    i = ix()
+    sid = _sid(i, ref)
+    try:
+        if kind == "rename":
+            if not new_name:
+                raise ValueError("rename needs new_name")
+            res = _r.plan_rename(i, sid, new_name)
+        elif kind == "signature":
+            res = _r.plan_signature_change(i, sid, new_signature or "")
+        elif kind == "move":
+            if not target_path:
+                raise ValueError("move needs target_path")
+            res = _r.plan_move(i, sid, target_path)
+        else:
+            raise ValueError("kind must be rename, signature or move")
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+    return json.dumps(res, separators=(",", ":"))
+
+
+# ----------------------------------------------------------------------------- summaries & sources
+
+@mcp.tool()
+def summaries_needed(target: str | None = None, limit: int = 25) -> str:
+    """Undocumented functions/classes (most-called first) with their code, for writing one-line summaries."""
+    return json.dumps(ix().symbols_needing_summary(target, limit), separators=(",", ":"))
+
+
+@mcp.tool()
+def save_summaries(items: dict[str, str], model: str = "") -> str:
+    """Store one-line summaries {symbol_id: text}. Kept by code hash until the code changes; shown with a ≈ marker
+    and used by search."""
+    n = ix().save_summaries(items, model)
+    return json.dumps({"saved": n})
+
+
+@mcp.tool()
+def list_sources() -> str:
+    """Indexed dependency packs and external repos usable via source= on repo_map/search_symbols/get_symbol/
+    file_outline/get_context."""
+    from . import sources as _sources
+    return json.dumps(_sources.registry(), separators=(",", ":"))
+
+
+@mcp.tool()
+def add_source(spec: str) -> str:
+    """Index an installed dependency ('pkg:react', 'pkg:fastapi', 'pkg:github.com/gin-gonic/gin') or a local folder
+    ('path:../other-service'). Cached per version and shared across repos. GitHub repos: use the CLI (network)."""
+    from . import sources as _sources
+    try:
+        return json.dumps(_sources.add(spec, ROOT, allow_network=False), separators=(",", ":"))
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+
+
 # ----------------------------------------------------------------------------- tool tiers
 # Every tool schema costs tokens on every turn. Tiers expose only what a session needs.
 TIERS = {
@@ -454,7 +635,10 @@ TIERS = {
              "find_references", "read_spec", "token_savings"},
 }
 TIERS["standard"] = TIERS["core"] | {"search_code", "changed_symbols", "impact_of", "hotspots", "list_specs",
-                                     "spec_drift", "project_profile", "get_profile", "reindex"}
+                                     "spec_drift", "project_profile", "get_profile", "reindex", "call_hierarchy",
+                                     "class_hierarchy", "search_ast", "plan_refactor", "list_sources"}
+TIERS["analysis"] = TIERS["standard"] | {"symbol_importance", "dead_code", "dependency_cycles", "coupling",
+                                         "layer_violations", "pr_risk"}
 TIER = (os.environ.get("SPECFORGE_TOOLS") or load_config(ROOT).get("tool_tier") or "full").lower()
 if TIER in TIERS:
     for _t in list(mcp._tool_manager._tools if hasattr(mcp, "_tool_manager") else []):

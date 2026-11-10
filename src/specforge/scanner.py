@@ -91,7 +91,17 @@ def _git_files(root: Path) -> list[str] | None:
     return [p for p in out.decode("utf-8", errors="ignore").split("\0") if p]
 
 
-def _walk_files(root: Path) -> list[str]:
+def _only_relaxed_dirs(rel: str) -> bool:
+    """True when the only reason a path is ignored is a dist/build/lib-style folder."""
+    parts = rel.split("/")
+    name = parts[-1]
+    if name in _IGNORED_NAMES or name.endswith(_IGNORED_SUFFIXES) or (_OTHER_RX and _OTHER_RX.match(name)):
+        return False
+    hits = [p for p in parts[:-1] if p in _IGNORED_DIRS]
+    return bool(hits) and all(p in RELAXED_KEEP for p in hits)
+
+
+def _walk_files(root: Path, relaxed: bool = False) -> list[str]:
     gi_path = root / ".gitignore"
     gi = None
     if gi_path.exists():
@@ -100,8 +110,8 @@ def _walk_files(root: Path) -> list[str]:
     for dirpath, dirnames, filenames in os.walk(root):
         rel_dir = os.path.relpath(dirpath, root).replace(os.sep, "/")
         rel_dir = "" if rel_dir == "." else rel_dir + "/"
-        dirnames[:] = [d for d in dirnames if d not in _IGNORED_DIRS
-                       and not (gi and gi.match_file(rel_dir + d + "/"))]
+        dirnames[:] = [d for d in dirnames if (d not in _IGNORED_DIRS or (relaxed and d in RELAXED_KEEP))
+                       and d != "node_modules" and not (gi and gi.match_file(rel_dir + d + "/"))]
         for f in filenames:
             rel = rel_dir + f
             if not (gi and gi.match_file(rel)):
@@ -109,17 +119,21 @@ def _walk_files(root: Path) -> list[str]:
     return files
 
 
-def iter_candidates(root: Path) -> list[Candidate]:
+RELAXED_KEEP = {"dist", "build", "lib", "out", "bin", "vendor"}
+
+
+def iter_candidates(root: Path, relaxed: bool = False) -> list[Candidate]:
     """Every file worth considering, with one stat each. No file contents are read here."""
     root = root.resolve()
     user = _user_spec(root)
-    listed = _git_files(root)
+    listed = None if relaxed else _git_files(root)
     if listed is None:
-        listed = _walk_files(root)
+        listed = _walk_files(root, relaxed)
     out: list[Candidate] = []
     base = str(root) + os.sep
     for rel in listed:
-        if builtin_ignored(rel) or is_secret(rel) or (user and user.match_file(rel)):
+        if (builtin_ignored(rel) and not (relaxed and _only_relaxed_dirs(rel))) or is_secret(rel) \
+                or (user and user.match_file(rel)):
             continue
         try:
             st = os.stat(base + rel)

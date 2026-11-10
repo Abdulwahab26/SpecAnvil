@@ -24,7 +24,22 @@ What changed (see ADR-3): removed an O(n²) `set()` rebuild in the removal check
 
 ## Head-to-head with jCodeMunch (its own benchmark)
 
-Same pinned repos, same 5 queries, same workflow, tiktoken cl100k: jCodeMunch 17,581 tokens · SpecForge **9,306** default (−47%) · **12,148** with every body in full (−31%). Cold index: express 0.23 s vs 1.72 s, fastapi 1.39 s vs 7.07 s, gin 0.27 s vs 1.56 s. Details and caveats: [COMPARISON.md](COMPARISON.md).
+Same pinned repos, same 5 queries, same workflow, tiktoken cl100k: jCodeMunch 17,581 tokens · SpecForge 0.4 **6,086 (−65%)** (0.3: 9,306). Cold index including call/import graphs: express 0.37 s vs 1.72 s, fastapi 2.54 s vs 7.07 s, gin 0.45 s vs 1.56 s. Details and caveats: [COMPARISON.md](COMPARISON.md).
+
+## Semantic retrieval (paraphrased tasks, `tests/evals/semantic_fullstack_fastapi.json`)
+
+| Mode | hit@5 | MRR |
+|---|---|---|
+| lexical | 0.08 | 0.08 |
+| hybrid (body vocabulary, no download) | 0.25 | 0.19 |
+| semantic (bge-small-en-v1.5, local ONNX) | 0.50 | 0.22 |
+| hybrid + vectors (weights 1.0 / 0.5 / 2.0) | 0.42 | 0.16 |
+
+`get_context` on the same paraphrases: expected symbol in the full-body context **3/12 → 8/12** with vectors. The fusion weights were chosen by grid search over both evals together; the natural-language task eval moved from hit@5 0.83 / MRR 0.48 (lexical list) to 0.92 / 0.65 (fused). Embedding throughput in this 2-vCPU container: ~5–7 symbols/s with bge-small (627 symbols in ~2 min, incremental afterwards); expect several times faster on a developer laptop.
+
+## Indexing with graphs (Django, 5.6k files, 58.9k symbols, 114k call sites, 9.6k import edges)
+
+Cold 9.9 s (v0.3 without graphs: 6.0 s) · no-op refresh 0.11 s · one file 0.29 s · analyses: PageRank 1.2 s, dead code 1.2 s (incl. verification search), cycles 0.01 s, layers 1.1 s, AST preset 0.08 s.
 
 ## Token savings (full-stack-fastapi-template, 13 typical lookups)
 
@@ -37,7 +52,7 @@ Baseline = tokens of the whole files the model would otherwise open (≈4 chars/
 |---|---|---|
 | recall@any (symbol in context as body or signature) | 1.00 | 1.00 |
 | recall@full (full body included) | 1.00 | 1.00 |
-| MRR of first expected symbol | 0.88 | 0.83 |
+| MRR of first expected symbol | 0.86 | 0.83 |
 
 (v0.2 was recall@full 0.92, MRR 0.78; v0.3 added term-coverage ranking, test/example down-ranking and nested-result dedupe.)
 

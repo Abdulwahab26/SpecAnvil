@@ -23,7 +23,7 @@ from .specs import lock_specs
 MARK_START = "<!-- specforge:start -->"
 MARK_END = "<!-- specforge:end -->"
 COMMANDS = ["groom", "design", "plan", "fe", "be", "db", "qa", "e2e", "verify", "flow", "ship", "status",
-            "learn", "spec", "test-plan", "test-run", "backfill", "profile", "docs"]
+            "learn", "spec", "test-plan", "test-run", "backfill", "profile", "docs", "summarize", "analyze"]
 
 
 def asset(path: str) -> str:

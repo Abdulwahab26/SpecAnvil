@@ -10,7 +10,10 @@ flowchart TB
     DT[detect<br/>stack · DBs · tickets · conventions] --> BS[bootstrap]
     IX --> BS
     PR[(~/.specforge/profile.json<br/>models per role · backfill prefs)] --> BS
-    IX --> MCP[specforge-mcp<br/>29 tools · tiers]
+    IX --> MCP[specforge-mcp<br/>43 tools · 4 tiers]
+    GR[graph<br/>calls · bases · imports] --> MCP
+    SEM[(local embeddings<br/>optional)] --> MCP
+    SRC[sources<br/>deps · GitHub · folders] --> MCP
     FX[facts + docs<br/>archetypes · catalog · checks] --> MCP
     TS[testing<br/>surface · coverage · plan schema] --> MCP
     TK[tickets<br/>git archaeology · resumable state] --> MCP
@@ -29,7 +32,7 @@ flowchart TB
 
 | Domain (weight) | Where it shows up |
 |---|---|
-| **Agentic architecture & orchestration** (27%) | `/sf:flow` orchestrator + 12 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
+| **Agentic architecture & orchestration** (27%) | `/sf:flow` orchestrator + 13 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
 | **Claude Code configuration & workflows** (20%) | Generated `CLAUDE.md` block, slash commands with `argument-hint`, subagents with `model` and `tools` frontmatter, project skills generated from the repo's own code, `.mcp.json` merge that never clobbers user servers, `settings.json` hooks and permissions. Upgrades re-render assets without touching user-edited specs. |
 | **Prompt engineering & structured output** (20%) | Commands state role, inputs, procedure, output contract and next step. Machine-readable artifacts where a program consumes them (`milestones.json`, schema-checked by `validate_plan`); Gherkin ACs and `path::Qualname` refs in specs so drift can be checked by code. |
 | **Tool design & MCP integration** (18%) | Narrow, composable tools with ids that chain (`search_symbols` → `get_symbol(id)`), budget parameters, section-level reads, errors raised as MCP `isError` with an actionable next step, and tools that return the minimum context a small model needs (`next_test_milestone`). Connector catalog picks third-party MCP servers from detected signals with `${ENV}` secrets and read-only defaults. |
@@ -49,6 +52,8 @@ flowchart TB
 | Never pay twice for the same code in a session | server-side delivery ledger; PreCompact hook resets it |
 | Every required document exists, has its sections and covers every endpoint/function/setting | `doc_check` / `specforge docs check --strict`; `doc_register` refuses incomplete docs |
 | Docs don't silently go out of date | facts hash per document; status flips to stale when the code changes |
+| Dead code is only reported when no occurrence exists | graph prefilter + batched word search over all code before reporting |
+| Semantic search never phones home after setup | model loads with `local_files_only` + `HF_HUB_OFFLINE`; remote embedding endpoints refused unless allowed |
 | Model choices are valid Claude Code values | `profile.validate_model` |
 
 Prompts still carry intent and judgement (how to design a test, how to word an AC); code carries every rule that has a right answer.
@@ -107,3 +112,17 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Decision.** The MCP server keeps a per-session ledger (symbol id → body hash). Unchanged bodies are referenced, not resent; `get_context` spends its budget only on new code. A PreCompact hook resets the ledger so the model is never told it "has" code that was summarised away. Symbols over 1,500 tokens return a structural skeleton (top-level statements, nested blocks folded) with `full=true` / `focus=` escape hatches.
 **Result.** −47% tokens vs jCodeMunch on its own benchmark (−31% with skeletons off), with comparable picks.
 **Trade-off.** A skeleton can cost one extra call when the agent needs a nested block. `focus=` keeps that call small.
+
+### ADR-11: Code graph from regex extraction plus scoped name resolution
+**Context.** Call/class hierarchies, PageRank, dead code and cycles need a graph across 300+ languages without per-language compilers.
+**Decision.** One extra pass per file (same worker, no extra reads) records call sites *with their receiver*, base classes, package/namespace and declarations. Imports are resolved to files with language-aware rules. Calls resolve by scope: receiver match (`crud.create_user` → `crud.py`) > same file > imported files > globally unique name; ambiguous calls make no edge rather than a wrong one.
+**Trade-off.** Not a type checker: dynamic dispatch and DI are invisible, which tools state in their output. Precision beats recall: a missing edge is safer than a wrong one, and dead code is double-checked by a word search before it is reported.
+**Lesson recorded.** Two field regexes with `\s*` crossing newlines cost 7.5 s on Django; line-bounded `[ \t]*` fixed it (0.8 s). Extractor regexes are benchmarked per pattern.
+
+### ADR-12: Semantic search as an optional, local, measured layer
+**Decision.** Default search stays lexical (names / signatures). A hybrid mode adds body vocabulary (no download) and, when built, local embeddings (fastembed ONNX or a localhost endpoint), fused by reciprocal rank with weights chosen on two evals. The model is fetched only by the explicit `specforge embed`; query-time loads are offline.
+**Why.** Mixing body vocabulary into the default ranking hurt MRR (0.88 → 0.65), so it lives in its own list. Embeddings lifted paraphrased-task context hits from 3/12 to 8/12 without hurting the main eval.
+
+### ADR-13: Dependency packs from installed versions instead of curated packs
+**Decision.** `pkg:<name>` indexes the dependency you actually have installed (node_modules, the project virtualenv or current Python, the Go module cache), keyed by version, stored under `~/.specforge/sources`, shared by every repo. The same tools accept `source=`.
+**Trade-off.** Requires the dependency to be installed, which it is in any project that uses it, and that is exactly the version the agent should read.

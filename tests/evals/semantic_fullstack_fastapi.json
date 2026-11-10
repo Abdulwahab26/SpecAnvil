@@ -1,0 +1,18 @@
+{
+  "note": "Paraphrased tasks that share (almost) no words with the target symbol names: measures concept retrieval, not name matching.",
+  "k": 5,
+  "cases": [
+    {"query": "encrypt a credential before storing it", "expected": ["get_password_hash"]},
+    {"query": "check that a typed secret matches what we saved", "expected": ["verify_password", "authenticate"]},
+    {"query": "who is signed in right now", "expected": ["get_current_user", "read_user_me"]},
+    {"query": "mail someone a link so they can regain account access", "expected": ["recover_password", "generate_reset_password_email", "generate_password_reset_token"]},
+    {"query": "remove a product record for good", "expected": ["delete_item", "DeleteItem"]},
+    {"query": "paged listing of products", "expected": ["read_items", "ItemsTable", "getItemsQueryOptions"]},
+    {"query": "issue a signed session credential after successful sign-in", "expected": ["create_access_token", "login_access_token"]},
+    {"query": "build the outgoing message body from a template", "expected": ["render_email_template"]},
+    {"query": "make the very first administrator on startup", "expected": ["init_db"]},
+    {"query": "is the service alive", "expected": ["health_check"]},
+    {"query": "let a newcomer create their own profile", "expected": ["register_user", "SignUp"]},
+    {"query": "merge css class names conditionally", "expected": ["cn"]}
+  ]
+}

@@ -25,12 +25,21 @@ from .parser import FileParse, Symbol, parse_source
 from .scanner import Candidate, is_secret, iter_candidates, looks_binary
 from .tokens import estimate_tokens, redact
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "6"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files(
   path TEXT PRIMARY KEY, lang TEXT, hash TEXT, size INT, mtime_ns INT, lines INT, tokens INT,
-  parser TEXT, module TEXT, indexed_at REAL);
+  parser TEXT, module TEXT, indexed_at REAL, package TEXT);
 CREATE INDEX IF NOT EXISTS ix_files_module ON files(module);
+CREATE TABLE IF NOT EXISTS calls(caller_id INT, path TEXT, callee TEXT, line INT, recv TEXT);
+CREATE INDEX IF NOT EXISTS ix_calls_callee ON calls(callee);
+CREATE INDEX IF NOT EXISTS ix_calls_caller ON calls(caller_id);
+CREATE INDEX IF NOT EXISTS ix_calls_path ON calls(path);
+CREATE TABLE IF NOT EXISTS bases(path TEXT, cls TEXT, base TEXT);
+CREATE INDEX IF NOT EXISTS ix_bases_base ON bases(base);
+CREATE INDEX IF NOT EXISTS ix_bases_path ON bases(path);
+CREATE TABLE IF NOT EXISTS file_deps(src TEXT, dst TEXT, PRIMARY KEY(src, dst)) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS ix_deps_dst ON file_deps(dst);
 CREATE TABLE IF NOT EXISTS symbols(
   id INTEGER PRIMARY KEY, path TEXT, name TEXT, qualname TEXT, kind TEXT, signature TEXT,
   start_line INT, end_line INT, doc TEXT, parent TEXT, exported INT, body_hash TEXT, tokens INT);
@@ -39,12 +48,14 @@ CREATE INDEX IF NOT EXISTS ix_sym_name ON symbols(name);
 CREATE INDEX IF NOT EXISTS ix_sym_qual ON symbols(qualname);
 CREATE TABLE IF NOT EXISTS imports(path TEXT, source TEXT);
 CREATE INDEX IF NOT EXISTS ix_imp_path ON imports(path);
-CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, terms, signature, doc, path,
+CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, terms, signature, doc, path, body,
   tokenize='unicode61', prefix='2 3 4');
+CREATE TABLE IF NOT EXISTS summaries(body_hash TEXT PRIMARY KEY, summary TEXT, model TEXT, at REAL);
+CREATE TABLE IF NOT EXISTS vectors(symbol_id INTEGER PRIMARY KEY, body_hash TEXT, dim INT, vec BLOB);
 CREATE TABLE IF NOT EXISTS ledger(ts REAL, tool TEXT, returned INT, baseline INT);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
-DATA_TABLES = ("files", "symbols", "imports", "symbols_fts")
+DATA_TABLES = ("files", "symbols", "imports", "symbols_fts", "calls", "bases", "file_deps", "idents", "vectors")
 PARALLEL_THRESHOLD = 150  # below this, process start-up costs more than it saves
 
 
@@ -99,6 +110,25 @@ SYNONYMS = {
 }
 
 
+_BODY_IDENT_RX = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_BODY_STOP = {"self", "this", "return", "none", "null", "true", "false", "const", "let", "var", "def", "function",
+              "async", "await", "import", "from", "else", "elif", "for", "while", "try", "except", "catch", "finally",
+              "raise", "throw", "new", "public", "private", "static", "void", "string", "int", "str", "bool"}
+
+
+def body_terms(body: str, cap: int = 120) -> str:
+    """Distinct identifier sub-words used inside a body: the vocabulary of what the code does."""
+    out: dict[str, None] = {}
+    for w in _BODY_IDENT_RX.findall(body):
+        for p in _CAMEL.findall(w):
+            p = p.lower()
+            if len(p) > 2 and p not in _BODY_STOP:
+                out[p] = None
+                if len(out) >= cap:
+                    return " ".join(out)
+    return " ".join(out)
+
+
 def stem(w: str) -> str:
     """Tiny suffix stripper so tokens~token, expired~expiry~expire share a prefix."""
     for suf in ("ations", "ation", "ings", "ing", "ies", "ers", "ed", "es", "er", "s", "y", "e"):
@@ -109,6 +139,7 @@ def stem(w: str) -> str:
 
 GENERATED_RX = re.compile(r"(\.gen\.|\.generated\.|/generated/|__generated__|\.pb\.|_pb2\.|/migrations?/versions/|"
                           r"\.d\.ts$|/client/(types|sdk|schemas)\.|openapi)", re.I)
+DECL_KINDS = ("variable", "field", "constant", "type", "enum_member")
 NONPROD_RX = re.compile(r"(^|/)(examples?|samples?|demos?|docs?|docs_src|benchmarks?|fixtures?|testdata|"
                         r"stories|storybook|playground|scripts|tools)(/|$)", re.I)
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec|e2e)(/|$)|[._](test|spec)\.[a-z]+$|(^|/)test_[^/]+$|Tests?\.\w+$")
@@ -134,14 +165,19 @@ def module_of(path: str) -> str:
 
 
 def _from_dict(d: dict) -> FileParse:
-    return FileParse(language=d["language"], parser=d["parser"],
-                     symbols=[Symbol(**x) for x in d["symbols"]], imports=d["imports"])
+    return FileParse(language=d["language"], parser=d["parser"], symbols=[Symbol(**x) for x in d["symbols"]],
+                     imports=d["imports"], calls=[tuple(c) for c in d.get("calls", [])],
+                     bases=[tuple(b) for b in d.get("bases", [])], package=d.get("package", ""),
+                     idents=d.get("idents", {}))
 
 
 class CodeIndex:
-    def __init__(self, root: Path | str):
+    def __init__(self, root: Path | str, state: Path | str | None = None, relaxed: bool = False):
+        """`state` stores the index outside the repo (dependency packs, remote repos); `relaxed` keeps
+        dist/build/lib folders, which is where published packages ship their code."""
         self.root = Path(root).resolve()
-        d = state_dir(self.root)
+        self.relaxed = relaxed
+        d = Path(state) if state else state_dir(self.root)
         d.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(d / INDEX_FILE, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
@@ -185,7 +221,7 @@ class CodeIndex:
             present = {c.path for c in cands}
             removed = [p for p in only if p in stored and p not in present]
         else:
-            cands = iter_candidates(self.root)
+            cands = iter_candidates(self.root, relaxed=self.relaxed)
             present = {c.path for c in cands}
             removed = [p for p in stored if p not in present]
         t_scan = time.time()
@@ -226,6 +262,7 @@ class CodeIndex:
 
         # 4. write in one transaction
         texts = dict(to_parse)
+
         with self.db:
             for rel in removed:
                 self._delete_file(rel)
@@ -234,6 +271,9 @@ class CodeIndex:
                 self._write_file(rel, texts[rel], fp, *meta[rel])
             self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
             self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
+            if parsed or removed:
+                from .graph import rebuild_file_deps
+                rebuild_file_deps(self)
         ts_files = self.db.execute("SELECT COUNT(*) FROM files WHERE parser='tree-sitter'").fetchone()[0]
         return {"files_changed": len(parsed), "files_removed": len(removed),
                 "files_total": self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0],
@@ -242,6 +282,50 @@ class CodeIndex:
                 "timings": {"scan": round(t_scan - t0, 3), "parse": round(t_parse - t_scan, 3),
                             "write": round(time.time() - t_parse, 3)},
                 "parallel_workers": n_workers if len(to_parse) >= PARALLEL_THRESHOLD and n_workers > 1 else 1}
+
+    def _summary(self, body_hash: str) -> str:
+        if not hasattr(self, "_summary_cache"):
+            self._summary_cache = {r[0]: r[1] for r in self.db.execute("SELECT body_hash, summary FROM summaries")}
+        return self._summary_cache.get(body_hash, "")
+
+    def symbols_needing_summary(self, target: str | None = None, limit: int = 40) -> list[dict]:
+        """Functions/classes with no docstring and no summary yet, biggest and most-called first."""
+        sql = ("SELECT s.id, s.path, s.qualname, s.kind, s.signature, s.start_line, s.end_line, s.tokens, s.body_hash "
+               "FROM symbols s WHERE s.kind IN ('function','method','class','struct','interface') AND s.doc='' "
+               "AND s.body_hash NOT IN (SELECT body_hash FROM summaries) AND (s.end_line - s.start_line) >= 2")
+        args: list = []
+        if target:
+            sql += " AND (s.path LIKE ? OR s.path IN (SELECT path FROM files WHERE module=?))"
+            args += [target.rstrip("/") + "%", target]
+        rows = self.db.execute(sql + " ORDER BY s.tokens DESC LIMIT ?", (*args, limit * 3)).fetchall()
+        called = {r[0]: r[1] for r in self.db.execute("SELECT callee, COUNT(*) FROM calls GROUP BY callee")}
+        out = []
+        for r in rows:
+            if TEST_RX.search(r["path"]) or GENERATED_RX.search(r["path"]):
+                continue
+            body = self.read_lines(r["path"], r["start_line"], min(r["end_line"], r["start_line"] + 40))
+            out.append({"id": r["id"], "ref": f"{r['path']}::{r['qualname']}", "kind": r["kind"],
+                        "callers": called.get(r["qualname"].rsplit(".", 1)[-1], 0), "code": body})
+        out.sort(key=lambda x: -x["callers"])
+        return out[:limit]
+
+    def save_summaries(self, items: dict, model: str = "") -> int:
+        """items: {symbol_id: one-line summary}. Stored by body hash, so they survive re-indexing until code changes."""
+        n = 0
+        for sid, text in items.items():
+            text = " ".join(str(text).split())[:240]
+            row = self.db.execute("SELECT body_hash, doc FROM symbols WHERE id=?", (int(sid),)).fetchone()
+            if not row or not text:
+                continue
+            self.db.execute("INSERT OR REPLACE INTO summaries VALUES(?,?,?,?)", (row["body_hash"], text, model, time.time()))
+            if not row["doc"] or row["doc"].startswith("≈ "):
+                self.db.execute("UPDATE symbols SET doc=? WHERE id=?", ("≈ " + text, int(sid)))
+                self.db.execute("UPDATE symbols_fts SET doc=? WHERE rowid=?", (text, int(sid)))
+            n += 1
+        self.db.commit()
+        if hasattr(self, "_summary_cache"):
+            del self._summary_cache
+        return n
 
     def reparse_languages(self, langs: list[str]) -> dict:
         """After grammars are fetched, re-parse files of those languages that used the regex fallback."""
@@ -262,13 +346,16 @@ class CodeIndex:
         self.db.execute("DELETE FROM symbols WHERE path=?", (rel,))
         self.db.execute("DELETE FROM imports WHERE path=?", (rel,))
         self.db.execute("DELETE FROM files WHERE path=?", (rel,))
+        self.db.execute("DELETE FROM calls WHERE path=?", (rel,))
+        self.db.execute("DELETE FROM bases WHERE path=?", (rel,))
 
     def _write_file(self, rel: str, text: str, fp: FileParse, h: str, size: int, mtime_ns: int) -> None:
         self._delete_file(rel)
         lines = text.splitlines()
-        self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)",
+        self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (rel, fp.language, h, size, mtime_ns, len(lines), estimate_tokens(text),
-                         fp.parser, module_of(rel), time.time()))
+                         fp.parser, module_of(rel), time.time(), fp.package or ""))
+        qual_ids: dict[str, int] = {}
         if fp.symbols:
             base = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM symbols").fetchone()[0]
             sym_rows, fts_rows = [], []
@@ -276,15 +363,27 @@ class CodeIndex:
             for i, s in enumerate(fp.symbols, start=1):
                 body = "\n".join(lines[s.start_line - 1:s.end_line])
                 sid = base + i
+                qual_ids.setdefault(s.qualname, sid)
                 sym_rows.append((sid, rel, s.name, s.qualname, s.kind, s.signature, s.start_line, s.end_line,
                                  s.doc, s.parent, int(s.exported),
                                  hashlib.blake2b(body.encode(), digest_size=12).hexdigest(), estimate_tokens(body)))
-                fts_rows.append((sid, s.name, split_terms(s.qualname, rel), s.signature, s.doc, rel_terms))
+                bh = sym_rows[-1][11]
+                doc = s.doc or self._summary(bh)
+                if doc and not s.doc:  # AI summary (marked with ≈) shown where there is no docstring
+                    sym_rows[-1] = sym_rows[-1][:8] + ("≈ " + doc,) + sym_rows[-1][9:]
+                fts_rows.append((sid, s.name, split_terms(s.qualname, rel), s.signature, doc, rel_terms,
+                                 body_terms(body) if s.end_line > s.start_line else ""))
             self.db.executemany("INSERT INTO symbols VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", sym_rows)
-            self.db.executemany("INSERT INTO symbols_fts(rowid,name,terms,signature,doc,path) VALUES(?,?,?,?,?,?)",
+            self.db.executemany("INSERT INTO symbols_fts(rowid,name,terms,signature,doc,path,body) VALUES(?,?,?,?,?,?,?)",
                                 fts_rows)
         if fp.imports:
             self.db.executemany("INSERT INTO imports VALUES(?,?)", [(rel, i) for i in fp.imports])
+        if fp.calls:
+            self.db.executemany("INSERT INTO calls VALUES(?,?,?,?,?)",
+                                [(qual_ids.get(c[0]), rel, c[1], c[2], c[3] if len(c) > 3 else "")
+                                 for c in fp.calls if c[0] in qual_ids])
+        if fp.bases:
+            self.db.executemany("INSERT INTO bases VALUES(?,?,?)", [(rel, c, b) for c, b in fp.bases])
 
     # ----------------------------------------------------------------- ledger
     def record(self, tool: str, returned_text: str, baseline_tokens: int) -> None:
@@ -357,9 +456,9 @@ class CodeIndex:
         terms = list(dict.fromkeys(stem(t) for t in split_terms(query).split() if t))
         if not terms:
             return []
-        fts = " OR ".join(f'"{t}"*' for t in terms)
+        fts = "{name terms signature doc path} : (" + " OR ".join(f'"{t}"*' for t in terms) + ")"
         sql = ("SELECT s.id,s.path,s.name,s.qualname,s.kind,s.signature,s.start_line,s.end_line,s.doc,s.tokens,s.body_hash,"
-               "bm25(symbols_fts, 10.0, 4.0, 2.0, 1.5, 1.0) AS score "
+               "bm25(symbols_fts, 10.0, 4.0, 2.0, 1.5, 1.0, 0.0) AS score "
                "FROM symbols_fts JOIN symbols s ON s.id = symbols_fts.rowid WHERE symbols_fts MATCH ?")
         args: list = [fts]
         if kind:
@@ -388,6 +487,8 @@ class CodeIndex:
                 adj += 6
             if GENERATED_RX.search(r["path"]):
                 adj += 10
+            if r["kind"] in DECL_KINDS and r["name"].lower() != ql:
+                adj += 4  # variables/fields/constants: useful, but rarely the answer to a behaviour query
             r["score"] += adj
         rows.sort(key=lambda r: r["score"])
         # drop results nested inside (or containing) a better-ranked result: never pay for the same lines twice
@@ -400,6 +501,42 @@ class CodeIndex:
             if len(picked) >= limit:
                 break
         return picked
+
+    def search_body(self, query: str, limit: int = 50) -> list[dict]:
+        terms = list(dict.fromkeys(stem(t) for t in split_terms(query).split() if t and t not in STOPWORDS))
+        if not terms:
+            return []
+        fts = "{body doc} : (" + " OR ".join(f'"{t}"*' for t in terms) + ")"
+        sql = ("SELECT s.id,s.path,s.name,s.qualname,s.kind,s.signature,s.start_line,s.end_line,s.doc,s.tokens,s.body_hash,"
+               "bm25(symbols_fts, 0, 0, 0, 2.0, 0, 1.0) AS score FROM symbols_fts JOIN symbols s ON s.id=symbols_fts.rowid "
+               "WHERE symbols_fts MATCH ? AND s.kind IN ('function','method','class','struct') ORDER BY score LIMIT ?")
+        return [dict(r) for r in self.db.execute(sql, (fts, limit))]
+
+    def hybrid_search(self, query: str, limit: int = 20, kind: str | None = None, path_prefix: str | None = None,
+                      vector_hits: list[dict] | None = None) -> list[dict]:
+        """Reciprocal-rank fusion of name/signature BM25, body-vocabulary BM25 and (optional) embedding hits."""
+        lists = [self.search(query, kind=kind, path_prefix=path_prefix, limit=60), self.search_body(query, 60)]
+        if vector_hits:
+            lists.append(vector_hits)
+        fused: dict[int, dict] = {}
+        weights = (1.0, 0.5, 2.0) if vector_hits else (1.0, 0.8)  # tuned on tests/evals (see BENCHMARKS.md)
+        for weight, lst in zip(weights, lists):
+            for rank, r in enumerate(lst):
+                e = fused.setdefault(r["id"], {**r, "rrf": 0.0})
+                e["rrf"] += weight / (60 + rank)
+        out = sorted(fused.values(), key=lambda r: -r["rrf"])
+        if kind:
+            out = [r for r in out if r["kind"] == kind]
+        if path_prefix:
+            out = [r for r in out if r["path"].startswith(path_prefix.rstrip("/"))]
+        ql = query.lower()
+        wants_tests = "test" in ql
+        out.sort(key=lambda r: -(r["rrf"] - (0.012 if TEST_RX.search(r["path"]) and not wants_tests else 0)
+                                 - (0.008 if NONPROD_RX.search(r["path"]) else 0)
+                                 - (0.006 if r["kind"] in DECL_KINDS and r["name"].lower() != ql else 0)))
+        for r in out:
+            r["score"] = -r["rrf"]
+        return out[:limit]
 
     def find_symbol(self, ref: str | int, path: str | None = None) -> list[sqlite3.Row]:
         if isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit()):
@@ -457,6 +594,18 @@ class CodeIndex:
         stems = list(dict.fromkeys(stem(w) for w in words))
         extra = list(dict.fromkeys(x for st in stems for k, v in SYNONYMS.items() if st.startswith(k) for x in v))
         hits = self.search(" ".join(words + extra), limit=100)
+        sem_rank: dict[int, int] = {}
+        if self.cfg.get("semantic_context", True):
+            try:
+                from . import semantic
+                if semantic.has_vectors(self):
+                    for i, r in enumerate(semantic.search(self, task, 40)):
+                        sem_rank[r["id"]] = i
+                        if all(h["id"] != r["id"] for h in hits):
+                            r.setdefault("score", 0.0)
+                            hits.append(r)
+            except Exception:  # noqa: BLE001 - embeddings optional; never break context building
+                sem_rank = {}
         extra_stems = [stem(x) for x in extra if stem(x) not in stems]
         wants_tests = any(w.startswith("test") for w in words)
         file_score = Counter(h["path"] for h in hits)
@@ -473,9 +622,32 @@ class CodeIndex:
                 score += 8
             if h["kind"] in ("function", "method"):
                 score -= 1
+            if h["kind"] in DECL_KINDS:
+                score += 6
+            if h["id"] in sem_rank:
+                score -= 8 * (1 - sem_rank[h["id"]] / 40)  # semantic agreement, strongest for top matches
             return score
 
         hits.sort(key=rank)
+        # a matching parent (component/class/function) of reasonable size covers its matching children: keep
+        # the parent at the best child's position and drop the children, so no lines are paid for twice
+        by_path: dict[str, list[dict]] = {}
+        for h in hits:
+            by_path.setdefault(h["path"], []).append(h)
+        drop: set[int] = set()
+        promote: dict[int, int] = {}
+        for h in hits:
+            for p in by_path[h["path"]]:
+                if p["id"] != h["id"] and p["start_line"] <= h["start_line"] and h["end_line"] <= p["end_line"] \
+                        and p["kind"] not in DECL_KINDS and (p["tokens"] or 0) <= 1500 \
+                        and (p["end_line"] - p["start_line"]) > (h["end_line"] - h["start_line"]):
+                    drop.add(h["id"])
+                    promote.setdefault(p["id"], hits.index(h))
+                    break
+        if drop:
+            pos = {h["id"]: i for i, h in enumerate(hits)}
+            hits = sorted((h for h in hits if h["id"] not in drop),
+                          key=lambda h: min(pos[h["id"]], promote.get(h["id"], pos[h["id"]])))
         out = [f"# Context for: {task}", f"keywords: {', '.join(words)}", ""]
         used = estimate_tokens("\n".join(out))
         full_budget = int(budget * 0.7)
@@ -490,6 +662,9 @@ class CodeIndex:
                 if len(already) < 15:
                     already.append(f"[{h['id']}] {h['qualname']}")
                 files.append(h["path"])
+                continue
+            if h["kind"] in DECL_KINDS:
+                sig_only.append(h)
                 continue
             if h["tokens"] and used + h["tokens"] < full_budget and key not in seen_parents \
                     and per_file[h["path"]] < 3:

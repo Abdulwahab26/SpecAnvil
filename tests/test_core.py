@@ -62,7 +62,7 @@ def test_index_skips_secrets_and_searches(tmp_path):
     hits = ix.search("order create")
     assert hits[0]["qualname"] == "OrderService.create"
     text, files = ix.context_for("validate empty orders when creating", 2000)
-    assert "OrderService.create" in text and files
+    assert "def create" in text and files
 
 
 def test_section_read():
@@ -317,3 +317,144 @@ def test_focus_excerpt():
     out, cut = excerpt(body, "coupon")
     assert cut and "coupon_expired" in out and "def big" in out and "step15" not in out and "… (" in out
     assert len(out) < len(body) / 3
+
+
+def _graph_repo(tmp: Path) -> Path:
+    (tmp / "app").mkdir()
+    (tmp / "app" / "__init__.py").write_text("")
+    (tmp / "app" / "crud.py").write_text(
+        'from app.models import User\n\nMAX_USERS = 100\n\n'
+        'def create_user(name):\n    """Create and persist."""\n    return _save(User(name))\n\n'
+        'def _save(obj):\n    return obj\n\ndef _never_used(x):\n    return x * 2\n')
+    (tmp / "app" / "models.py").write_text(
+        'class Base:\n    pass\n\nclass User(Base):\n    name: str\n\n    def __init__(self, name):\n'
+        '        self.name = name\n\nclass Admin(User):\n    level = 1\n')
+    (tmp / "app" / "routes.py").write_text(
+        'from app import crud\nfrom app.models import User\n\n'
+        'def create_user(payload):\n    # create_user in a comment must not be renamed\n'
+        '    label = "create_user"\n    return crud.create_user(payload["name"])\n\n'
+        'def items():\n    try:\n        return []\n    except Exception:\n        pass\n\n'
+        'def page(x=[]):\n    return x\n')
+    subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+    return tmp
+
+
+def test_declarations_and_graph_tables(tmp_path):
+    root = _graph_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    kinds = {(r["qualname"], r["kind"]) for r in ix.db.execute("SELECT qualname, kind FROM symbols")}
+    assert ("MAX_USERS", "constant") in kinds and ("User.name", "field") in kinds and ("Admin.level", "field") in kinds
+    assert ("app/routes.py", "app/crud.py") in {tuple(r) for r in ix.db.execute("SELECT src, dst FROM file_deps")}
+    assert ("Admin", "User") in {tuple(r) for r in ix.db.execute("SELECT cls, base FROM bases")}
+
+
+def test_call_and_class_hierarchy_use_receiver(tmp_path):
+    from specforge import graph
+    root = _graph_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    crud_create = ix.find_symbol("app/crud.py::create_user")[0]["id"]
+    callers = graph.call_hierarchy(ix, crud_create, "callers", 1)
+    assert "routes.py" in callers  # crud.create_user resolved through the receiver, not to routes.create_user itself
+    h = graph.class_hierarchy(ix, "User")
+    assert {"class": "User", "extends": "Base", "defined_at": "app/models.py:1"} in h["ancestors"]
+    assert any(d["class"] == "Admin" for d in h["descendants"])
+
+
+def test_dead_code_cycles_layers_importance(tmp_path):
+    from specforge import graph
+    root = _graph_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    dead = {d["ref"] for d in graph.dead_code(ix)}
+    assert "app/crud.py::_never_used" in dead and "app/crud.py::_save" not in dead
+    (root / "app" / "models.py").write_text((root / "app" / "models.py").read_text() + "\nfrom app import crud\n")
+    ix.build()
+    assert any({"app/crud.py", "app/models.py"} <= set(c) for c in graph.cycles(ix))
+    lv = graph.layer_violations(ix)["violations"]
+    assert any(v["from_layer"] == "domain" for v in lv)  # models (domain) importing crud (infrastructure)
+    assert graph.importance(ix, 5)
+
+
+def test_ast_presets_and_refactor_plans(tmp_path):
+    from specforge import astsearch, refactor
+    root = _graph_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    assert astsearch.search(ix, preset="broad-except")["matches"]
+    assert astsearch.search(ix, preset="mutable-default")["matches"][0]["in"] == "page"
+    raw = astsearch.search(ix, query="(class_definition name: (identifier) @hit)", language="python")
+    assert {m["code"] for m in raw["matches"]} >= {"User", "Admin"}
+    sid = ix.find_symbol("app/crud.py::create_user")[0]["id"]
+    plan = refactor.plan_rename(ix, sid, "add_user")
+    edits = {(e["path"], e["new_text"].strip()) for e in plan["edits"]}
+    assert ("app/crud.py", "def add_user(name):") in edits
+    routes = [e for e in plan["edits"] + plan["needs_review"] if e["path"] == "app/routes.py"]
+    assert all("# create_user in a comment" not in e["new_text"] or "add_user in a comment" not in e["new_text"] for e in routes)
+    assert all('"create_user"' in e["new_text"] or "label" not in e["old_text"] for e in routes)
+
+
+def test_summaries_persist_and_hybrid_search(tmp_path):
+    root = _graph_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    need = ix.symbols_needing_summary()
+    target = next(n for n in need if n["ref"].endswith("routes.py::items"))
+    assert ix.save_summaries({str(target["id"]): "Returns the catalogue listing, swallowing failures."}) == 1
+    ix.build(full=True)  # re-index: summary survives because the code hash is unchanged
+    row = ix.find_symbol("app/routes.py::items")[0]
+    assert row["doc"].startswith("≈ Returns the catalogue")
+    assert ix.hybrid_search("catalogue listing", 5)[0]["qualname"] == "items"
+
+
+def test_semantic_endpoint_provider_and_remote_refusal(tmp_path):
+    import http.server
+    import threading
+
+    import pytest
+
+    from specforge import semantic
+    from specforge.config import load_config, save_config
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):  # deterministic fake embeddings: bag of letters
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            vecs = [[t.lower().count(c) for c in "abcdefghijklmnopqrstuvwxyz"] for t in body["input"]]
+            out = json.dumps({"data": [{"embedding": v} for v in vecs]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    root = _graph_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    cfg = load_config(root)
+    cfg["semantic"] = {"provider": "endpoint", "endpoint": f"http://127.0.0.1:{srv.server_port}", "model": "fake"}
+    save_config(root, cfg)
+    semantic._cache.clear()
+    assert semantic.build(ix)["embedded"] > 0 and semantic.has_vectors(ix)
+    assert semantic.search(ix, "create user", 3)
+    cfg["semantic"]["endpoint"] = "https://embeddings.example.com/v1"
+    save_config(root, cfg)
+    semantic._cache.clear()
+    with pytest.raises(ValueError, match="remote"):
+        semantic.provider(ix)
+    srv.shutdown()
+
+
+def test_path_source_is_queryable(tmp_path, monkeypatch):
+    from specforge import sources
+    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    (tmp_path / "other").mkdir()
+    other = _graph_repo(tmp_path / "other")
+    res = sources.add(f"path:{other}", tmp_path)
+    assert res["symbols"] > 5
+    ix = sources.open_source(res["source"])
+    assert ix.search("create user")[0]["name"] == "create_user"

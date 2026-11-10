@@ -61,7 +61,7 @@ def fetch_grammars(langs: list[str]) -> dict:
         cache = None
     return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
             "cache": cache}
-PARSER_VERSION = "4"  # bump to force a full re-index after parser changes
+PARSER_VERSION = "6"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -97,6 +97,10 @@ class FileParse:
     parser: str  # "tree-sitter" | "regex" | "text"
     symbols: list[Symbol] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
+    calls: list = field(default_factory=list)     # (caller_qualname, callee_name, line)
+    bases: list = field(default_factory=list)     # (class_name, base_name)
+    package: str = ""
+    idents: dict = field(default_factory=dict)    # identifier -> occurrences
 
 
 def detect_language(rel_path: str) -> str:
@@ -310,6 +314,29 @@ def _js_assignments(source: str, existing: list[Symbol]) -> list[Symbol]:
 
 
 def parse_source(rel_path: str, source: str) -> FileParse:
+    fp = _parse_symbols(rel_path, source)
+    if fp.parser == "text":
+        return fp
+    from .extract import extract
+    if fp.language in ("javascript", "typescript", "tsx") and "require(" in source:
+        known = set(fp.imports)
+        for m in re.finditer(r"""require\(\s*['"]([^'"]+)['"]\s*\)""", source):
+            stmt = f"require('{m.group(1)}')"
+            if stmt not in known:
+                fp.imports.append(stmt)
+                known.add(stmt)
+    ex = extract(source, fp.language, fp.symbols)
+    for name, kind, line, parent in ex.decls:
+        fp.symbols.append(Symbol(name=name, kind=kind, qualname=f"{parent}.{name}" if parent else name,
+                                 signature=source.split("\n")[line - 1].strip()[:200], start_line=line,
+                                 end_line=line, parent=parent,
+                                 exported=source.split("\n")[line - 1].lstrip().startswith(("export", "pub ", "public"))))
+    fp.symbols.sort(key=lambda s: (s.start_line, s.end_line))
+    fp.calls, fp.bases, fp.package, fp.idents = ex.calls, ex.bases, ex.package, ex.idents
+    return fp
+
+
+def _parse_symbols(rel_path: str, source: str) -> FileParse:
     lang = detect_language(rel_path)
     if lang not in CODE_LANGUAGES:
         return FileParse(language=lang, parser="text")

@@ -34,6 +34,7 @@ ROLES = {
     "reviewer": "reviewer",
     "backfill": "ticket-archaeologist",
     "docs": "doc-writer",
+    "summarizer": "summarizer",
 }
 
 DEFAULTS: dict = {
@@ -41,6 +42,7 @@ DEFAULTS: dict = {
         "test_planner": "opus",     # deep analysis: strongest reasoning
         "test_executor": "haiku",   # follows explicit milestones: cheap and fast
         "docs": "sonnet",           # long-form writing from extracted facts
+        "summarizer": "haiku",      # one-line summaries: high volume, simple
     },
     "backfill": {
         "enabled": False,           # opt-in: pulling ticket history is never automatic

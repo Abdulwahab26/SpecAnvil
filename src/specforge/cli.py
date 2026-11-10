@@ -352,6 +352,98 @@ def cmd_docs(args) -> int:
     return 1 if (failed and args.strict) else 0
 
 
+def cmd_embed(args) -> int:
+    from . import semantic
+    from .index import CodeIndex
+    ix = CodeIndex(_root(args))
+    ix.build()
+    if args.code_model:
+        from .config import load_config, save_config
+        cfg = load_config(ix.root)
+        cfg["semantic"] = {**(cfg.get("semantic") or {}), "model": semantic.CODE_MODEL}
+        save_config(ix.root, cfg)
+    try:
+        res = semantic.build(ix, progress=lambda d, t: print(f"\r  embedded {d}/{t}", end="", file=sys.stderr))
+    except ImportError:
+        print("Semantic search needs the optional extra: pip install 'specforge[semantic]'", file=sys.stderr)
+        return 1
+    print(file=sys.stderr)
+    print(json.dumps(res, indent=2))
+    return 0
+
+
+def cmd_source(args) -> int:
+    from . import sources
+    if args.action == "list":
+        for k, v in sources.registry().items():
+            print(f"  {k:<32} {v['version']:<12} {v['files']:>6} files {v['symbols']:>7} symbols  {v['root']}")
+        return 0
+    if not args.spec:
+        print("usage: specforge source add|remove <pkg:name | gh:owner/repo[@ref] | path:dir>", file=sys.stderr)
+        return 1
+    if args.action == "remove":
+        print("removed" if sources.remove(args.spec) else "not found")
+        return 0
+    try:
+        print(json.dumps(sources.add(args.spec, Path(args.path or ".").resolve(), allow_network=True), indent=2))
+    except (ValueError, OSError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_watch(args) -> int:
+    """Keep the index fresh while you (or any tool) edit files. Polling: ~0.1 s per pass on a 5k-file repo."""
+    import time as _time
+    from .index import CodeIndex
+    ix = CodeIndex(_root(args))
+    print(f"watching {ix.root} every {args.interval}s (Ctrl-C to stop)")
+    sem = None
+    if args.embed:
+        from . import semantic as sem
+    try:
+        while True:
+            r = ix.build()
+            if r["files_changed"] or r["files_removed"]:
+                msg = f"{_time.strftime('%H:%M:%S')} re-indexed {r['files_changed']} changed, {r['files_removed']} removed"
+                if sem is not None and sem.has_vectors(ix):
+                    msg += f", embedded {sem.build(ix)['embedded']}"
+                print(msg, flush=True)
+            _time.sleep(args.interval)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_analyze(args) -> int:
+    from . import astsearch, graph
+    from .analysis import hotspots
+    from .index import CodeIndex
+    ix = CodeIndex(_root(args))
+    ix.build()
+    what = args.what
+    if what == "importance":
+        data = graph.importance(ix, args.limit)
+    elif what == "dead":
+        data = graph.dead_code(ix, args.limit)
+    elif what == "cycles":
+        data = {"file": graph.cycles(ix, "file"), "module": graph.cycles(ix, "module")}
+    elif what == "coupling":
+        data = graph.coupling(ix, args.limit)
+    elif what == "layers":
+        data = graph.layer_violations(ix)
+    elif what == "risk":
+        data = graph.pr_risk(ix, args.base)
+    elif what == "hotspots":
+        data = hotspots(ix, limit=args.limit)
+    elif what == "ast":
+        data = astsearch.search(ix, preset=args.preset or "broad-except", limit=args.limit) if args.preset \
+            else astsearch.presets()
+    else:
+        data = {}
+    print(json.dumps(data, indent=1))
+    return 0
+
+
 def cmd_doctor(args) -> int:
     root = _root(args)
     checks = []
@@ -456,6 +548,31 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--strict", action="store_true", help="check: also fail on missing/stale docs (for CI)")
     p.add_argument("--path")
     p.set_defaults(fn=cmd_docs)
+
+    p = sub.add_parser("embed", help="build local embeddings for semantic search (one-time model download)")
+    p.add_argument("path", nargs="?")
+    p.add_argument("--code-model", action="store_true", help=f"use a code-trained model (larger download)")
+    p.set_defaults(fn=cmd_embed)
+
+    p = sub.add_parser("source", help="index dependencies / external repos: add|list|remove <spec>")
+    p.add_argument("action", choices=["add", "list", "remove"])
+    p.add_argument("spec", nargs="?")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_source)
+
+    p = sub.add_parser("watch", help="keep the index (and embeddings) fresh while files change")
+    p.add_argument("path", nargs="?")
+    p.add_argument("--interval", type=float, default=2.0)
+    p.add_argument("--embed", action="store_true", help="also refresh embeddings for changed symbols")
+    p.set_defaults(fn=cmd_watch)
+
+    p = sub.add_parser("analyze", help="importance | dead | cycles | coupling | layers | risk | hotspots | ast")
+    p.add_argument("what", choices=["importance", "dead", "cycles", "coupling", "layers", "risk", "hotspots", "ast"])
+    p.add_argument("--path")
+    p.add_argument("--limit", type=int, default=25)
+    p.add_argument("--base", default="HEAD")
+    p.add_argument("--preset")
+    p.set_defaults(fn=cmd_analyze)
 
     p = sub.add_parser("hook", help="internal: Claude Code hook handler")
     p.add_argument("event")
