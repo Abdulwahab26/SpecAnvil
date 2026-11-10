@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+- **Runtime traces**: `import_runtime_trace` (OTLP JSON / JSONL / gzip, flat spans; mapped by code attributes, HTTP route with app prefixes, or name), `runtime_hot_paths` (hits, p50 / p95 / max ms), `runtime_unused`; latency feeds `file_risk`. CLI: `specforge insight trace-import | hot | unused`.
+- **Ranking regret**: local query → fetch ledger; `suggest_corrections` (zero results, reformulations, reads outside top 5, vocabulary gaps → synonym rules, `apply=True`); config synonyms used by search and `get_context`; `tune_weights` grid-searches fusion weights on an eval file or the ledger.
+- **Tool surface**: default `lite` tier (6 tools, ~790 tokens); `set_tool_tier` switches at runtime with `notifications/tools/list_changed` and picks a tier from a model id; `run_tool` dispatcher; compact schemas (full surface 10.2k → 7.9k tokens).
+- **Cross-repo contracts**: `group_contracts` with re-export resolution. **Handoffs**: `finalize_handoff` validated against the index.
+- 92 tools; every jCodeMunch tool has an implemented equivalent (`docs/COMPARISON.md`). `tests/mcp_v06_tools.py` (in CI); 46 unit tests.
+
 ## 0.5.0
 - **Every jCodeMunch tool mapped**: 40 new MCP tools (83 total): `symbol_complexity`, `file_risk`, `untested_symbols`, `similar_symbols`, `related_symbols`, `extraction_candidates`, `winnow_symbols`, `entry_points`, `signal_chains`, `flow_edges`, `endpoint_impact`, `tectonic_map`, `architecture_metrics`, `repo_health`, `decorator_census`, `dependency_graph`, `find_implementations` (incl. Go implicit interfaces), `check_safety`, `parity_map`, `search_columns`, `symbol_provenance`, `symbol_diff`, `churn_rate`, `digest`, `delivery_metrics`, `render_diagram`, `audit_agent_config`, `runtime_coverage`, `plan_turn`, `suggest_queries`, `session_snapshot`, `tool_stats`, `redaction_log`, `index_status`, `file_tree`, `get_file_content`, `list_workspaces`, `cross_repo_map`, `list_packs`, `add_pack`. Mapping table in `docs/COMPARISON.md`.
 - **Symbol coverage**: config keys (YAML / JSON / TOML / INI / `.env` names only) and documentation sections (Markdown / RST / AsciiDoc). express 712 → 994, fastapi 8,137 → 26,842, gin 1,680 → 1,960.

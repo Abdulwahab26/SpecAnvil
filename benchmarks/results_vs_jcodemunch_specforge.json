@@ -59,7 +59,7 @@
      ]
     }
    ],
-   "index_seconds": 0.27,
+   "index_seconds": 0.34,
    "total": 1800
   },
   {
@@ -121,7 +121,7 @@
      ]
     }
    ],
-   "index_seconds": 3.44,
+   "index_seconds": 4.02,
    "total": 2604
   },
   {
@@ -183,7 +183,7 @@
      ]
     }
    ],
-   "index_seconds": 0.39,
+   "index_seconds": 0.48,
    "total": 1520
   }
  ],
@@ -247,7 +247,7 @@
      ]
     }
    ],
-   "index_seconds": 0.29,
+   "index_seconds": 0.27,
    "total": 1800
   },
   {
@@ -309,7 +309,7 @@
      ]
     }
    ],
-   "index_seconds": 4.2,
+   "index_seconds": 4.6,
    "total": 2604
   },
   {
@@ -371,7 +371,7 @@
      ]
     }
    ],
-   "index_seconds": 0.36,
+   "index_seconds": 0.42,
    "total": 1520
   }
  ]

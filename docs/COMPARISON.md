@@ -6,14 +6,14 @@ jCodeMunch (jgravelle/jcodemunch-mcp, measured at v1.108.431) is the most mature
 
 Workflow per query: `search_symbols` (top 5) → fetch the top 3 symbols. 5 queries × 3 repos = 15 lookups. Tokens: tiktoken `cl100k_base`, counted on the text the server returns. Session dedupe **off**: every lookup measured fresh.
 
-| Repo (pinned commit) | jCodeMunch | SpecForge 0.5 |
+| Repo (pinned commit) | jCodeMunch | SpecForge 0.6 |
 |---|---|---|
 | expressjs/express `1faf228` | — | 1,800 |
 | fastapi/fastapi `a64dfbb` | — | 2,604 |
 | gin-gonic/gin `75ccf94` | — | 1,520 |
 | **Total (15 lookups)** | **17,581** | **5,924 (−66%)** |
 
-0.4: 6,086 (−65%). 0.3: 9,306. Adding config keys and documentation sections to the index in 0.5 did not move any of the 15 picks onto non-code results.
+Unchanged from 0.5. 0.4: 6,086 (−65%). 0.3: 9,306. Adding config keys and documentation sections to the index in 0.5 did not move any of the 15 picks onto non-code results.
 
 ### Top-3 picks by hand (the benchmark doesn't score relevance)
 
@@ -39,11 +39,11 @@ Both tools mostly land on framework internals. SpecForge's picks are more often 
 
 ## 3. Indexing
 
-| Repo | jCodeMunch cold `index --no-ai-summaries` | SpecForge 0.5 cold, through the MCP server |
+| Repo | jCodeMunch cold `index --no-ai-summaries` | SpecForge 0.6 cold, through the MCP server (two runs) |
 |---|---|---|
-| express | 1.72 s | **0.27 s** |
-| fastapi | 7.07 s | **3.44 s** |
-| gin | 1.56 s | **0.39 s** |
+| express | 1.72 s | **0.27–0.34 s** |
+| fastapi | 7.07 s | **3.44–4.02 s** |
+| gin | 1.56 s | **0.39–0.48 s** |
 
 SpecForge also builds the call graph, inheritance table and resolved import graph in that time, and in 0.5 indexes twice as many symbols on fastapi (section 4). 0.5 fixed two things that inflated earlier timings: a first `reindex(full=True)` no longer indexes twice, and a full rebuild clears tables once instead of deleting row by row. Incremental refresh on Django (5.6k files): 0.11 s for no changes, 0.29 s for one file.
 
@@ -59,7 +59,7 @@ jCodeMunch's totals include configuration keys (for example 189 from express's `
 
 ## 5. Tools: every jCodeMunch tool mapped
 
-jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94 are listed in its full tier. SpecForge 0.5 has 83 tools. Where jCodeMunch has three tools for one question, SpecForge often has one with a parameter, and some jCodeMunch tools are workflow guides that SpecForge ships as slash commands instead of schema.
+jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94 are listed in its full tier. SpecForge 0.6 has 92 tools, and **every jCodeMunch tool has an implemented equivalent** (no partial or missing rows). Where jCodeMunch has three tools for one question, SpecForge often has one with a parameter, and some jCodeMunch tools are workflow guides that SpecForge ships as slash commands instead of schema.
 
 **Search and retrieval**
 
@@ -100,8 +100,10 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 |---|---|
 | `get_changed_symbols`, `get_symbol_diff` | `changed_symbols`, `symbol_diff` |
 | `get_symbol_provenance`, `get_churn_rate`, `digest`, `get_delivery_metrics` | `symbol_provenance` (with ticket keys and decision lines), `churn_rate`, `digest`, `delivery_metrics` |
-| `get_runtime_coverage`, `find_hot_paths`, `find_unused_paths` | `runtime_coverage` (hot paths and never-executed code from lcov / Cobertura / JaCoCo) |
-| `import_runtime_signal` | partial: coverage files are read directly; **no OTel trace ingestion or per-symbol latency** |
+| `import_runtime_signal` | `import_runtime_trace`: OTLP JSON / JSON lines / gzip and flat span lines; spans mapped by `code.*` attributes, by HTTP route to the handler (app prefixes like `/api/v1` handled), or by name; re-imports accumulate |
+| `find_hot_paths` | `runtime_hot_paths` (hits, p50 / p95 / max ms, sort by count / p95 / total time) |
+| `find_unused_paths` | `runtime_unused` (never or not-recently executed functions in traced files) |
+| `get_runtime_coverage` | `runtime_coverage` (lcov / Cobertura / JaCoCo); trace latency also feeds `file_risk` |
 
 **Session, telemetry, config**
 
@@ -109,11 +111,14 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 |---|---|
 | `get_session_context`, `get_session_snapshot` | `session_snapshot` (survives compaction) |
 | `get_session_stats`, `analyze_perf` | `token_savings`, `tool_stats` (calls, avg / p95 ms, tokens) |
+| `suggest_corrections` | `suggest_corrections`: zero results, re-asked queries, reads outside the top 5, vocabulary gaps mined from the local query → fetch ledger; `apply=True` saves synonym rules that search and `get_context` use |
+| `tune_weights` | `tune_weights`: grid search of hybrid fusion weights on an eval file or the ledger's query → fetched pairs; saved only with `apply=True` and a real MRR gain |
 | `get_redaction_log`, `audit_agent_config` | `redaction_log`, `audit_agent_config` |
 | `check_embedding_drift` | built in: vectors are stored per model and never mixed; `index_status` reports coverage per model |
-| `menu`, `order`, `route`, `set_tool_tier`, `announce_model` | tool tiers chosen at startup (`SPECFORGE_TOOLS` / config); not switched mid-session |
+| `set_tool_tier`, `announce_model` | `set_tool_tier(tier, enable=[…], model=…)`: switches at runtime and sends `notifications/tools/list_changed`; a model id picks a tier |
+| `menu`, `order`, `route` | `set_tool_tier()` with no arguments lists every tool by tier; `run_tool(name, arguments)` calls any tool, even on clients that ignore list-changed notifications |
 | `jcodemunch_guide`, `workflow`, `explore`, `triage`, `assess`, `trace` | slash commands and CLAUDE.md block (`/sf:analyze`, `/sf:verify`…) over `repo_map`, `repo_health`, `pr_risk`, `call_hierarchy` + `signal_chains` |
-| `finalize_handoff` | different shape: `/sf:ship` writes `pr.md`; the docs engine writes and gates repository docs |
+| `finalize_handoff` | `finalize_handoff(title, sections, kind)`: audit / investigation / review / design; required sections, no placeholders, every `path::Symbol` and `path:line` checked against the index; stamped with commit and index time; refuses to write on errors unless `force` |
 
 **Indexing and sources**
 
@@ -123,23 +128,22 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 | `index_file`, `register_edit`, `invalidate_cache` | PostToolUse re-index hook, 20 s auto-refresh, `reindex(full=True)` |
 | `get_watch_status` | `index_status`, `specforge watch` |
 | `list_repos`, `list_workspaces`, `resolve_repo`, `get_cross_repo_map` | `list_workspaces`, `list_sources`, `cross_repo_map` |
-| `get_group_contracts` | partial: `cross_repo_map` shows cross-repo imports, not a contract summary |
+| `get_group_contracts` | `group_contracts`: provider symbol, signature, consuming repos and files, re-exports resolved (verified: full-stack-fastapi-template ↔ fastapi, 11 contracts, 0 unresolved) |
 | `get_project_intel` | config-key symbols + `doc_facts` (Docker, CI, compose, env templates, IaC) |
 | `embed_repo`, `summarize_repo` | `specforge embed` (CLI on purpose: the only step allowed to download), `summaries_needed` + `save_summaries` |
-
-**Not implemented:** `suggest_corrections` (mining ranking regret from telemetry), `tune_weights` (fusion weights are tuned offline on the evals and fixed, so results are reproducible), `test_summarizer` (no provider API keys; summaries come from your own Claude session).
+| `test_summarizer` | not needed: summaries are written by your own Claude session, so there is no provider connection to test; `summaries_needed` reports coverage |
 
 **SpecForge-only:** `entry_points`, `flow_edges` (route → handler, event emit → listeners, DI), spec tools (`read_spec`, `list_specs`, `spec_drift`), unit-test pipeline (`test_surface`, `validate_test_plan`, `next_test_milestone`, `update_test_milestone`), documentation engine (`doc_plan`, `doc_facts`, `doc_check`, `doc_register`), ticket tools (`ticket_keys`, `ticket_trace`, `backfill_progress`), `project_profile`, `get_profile`.
 
 ## 6. Tool-schema cost per turn
 
-| Surface | jCodeMunch | SpecForge 0.5 |
+| Surface | jCodeMunch | SpecForge 0.6 |
 |---|---|---|
-| Default | 6 router tools, ~1,050 tokens (others reached via `menu` / `order` / `route`) | `core`: 9 tools, ~1,380 tokens |
-| Mid | — | `standard` 29 tools ~3,520 · `analysis` 56 tools ~6,380 |
-| Everything | 94 tools, ~28,142 tokens | **83 tools, ~9,000 tokens** |
+| Default | 6 router tools, ~1,050 tokens | **`lite`: 6 tools, ~790 tokens** (`repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`) |
+| Mid | — | `core` 11 tools ~1,200 · `standard` 32 ~2,960 · `analysis` 62 ~5,450 |
+| Everything | 94 tools, ~28,142 tokens | **92 tools, ~7,870 tokens** |
 
-Measured as tiktoken `cl100k_base` over each tool's name, description and input schema.
+Measured as tiktoken `cl100k_base` over each tool's name, description and input schema. 0.6 strips pydantic's auto-generated titles and collapses `Optional[X]` to `X` in advertised schemas (arguments are still validated against the Python signatures), which cut the full surface from ~10.2k to ~7.9k tokens. Switching tiers mid-session sends the standard `notifications/tools/list_changed`; because some clients don't refresh on it yet, `run_tool` reaches any tool regardless.
 
 ## 7. Semantic search, summaries, packs, watch
 
@@ -162,13 +166,14 @@ jCodeMunch has a long public history and a user base; SpecForge is new. What Spe
 
 ## What remains in jCodeMunch's favour
 
-- A long public track record and user base.
-- OTel runtime-trace ingestion with per-symbol latency, ranking-regret mining, and runtime tier switching.
-- Its default surface is slightly smaller (6 router tools vs 9).
+- **Public track record and user base.** This is the one gap code can't close: it takes releases, time and users. SpecForge's answer is evidence anyone can re-run (CI on every push across 3 OSes × 3 Pythons, a retrieval quality gate, end-to-end MCP suites, reproducible benchmarks, tagged releases) — but it is still a new project, and you should weigh it as one.
+
+Every engineering gap from earlier comparisons (tool coverage, symbol counts, curated packs, OTel runtime traces, ranking-regret mining, runtime tier switching, default surface size) is closed in 0.6.
 
 ## What SpecForge adds beyond a code index
 
-- **−66% tokens** on jCodeMunch's own benchmark, **2–6× faster** cold indexing including graph building, and more symbols on two of the three benchmark repos.
+- **−66% tokens** on jCodeMunch's own benchmark, **2–6× faster** cold indexing including graph building, more symbols on two of the three benchmark repos, a **24% smaller default** tool surface and a **72% smaller full** surface.
+- Features jCodeMunch doesn't have: route → handler / event / DI flow edges, entry points, HTTP-route mapping of traces, trace latency in risk scores, validated handoffs checked against the index, regret rules applied automatically to `get_context`, Go implicit-interface implementations, config keys and doc sections as fetchable symbols, `.sfpack` offline pack sharing.
 - **Programmatic enforcement:** server-side session dedupe, secret guard hook, schema-validated test plans, test-verified milestones, documentation completeness gate, local-only guarantees with tests.
 - **MIT licence** (jCodeMunch: free for non-commercial use; commercial licences $79–$1,999 per its PyPI page).
 - The complete spec-driven package: specs with drift checks, 13 agents, 21 commands from grooming to Playwright E2E, a unit-test planner/executor, ticket backfill, documentation for every repo type, per-role models.

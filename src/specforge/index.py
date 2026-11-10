@@ -498,6 +498,10 @@ class CodeIndex:
         terms = list(dict.fromkeys(stem(t) for t in split_terms(query).split() if t))
         if not terms:
             return []
+        learned = self.user_synonyms()
+        if learned:  # rules learned by suggest_corrections widen recall
+            extra = [stem(x) for t in terms for k, v in learned.items() if t.startswith(k) for x in v]
+            terms += [x for x in dict.fromkeys(extra) if x not in terms]
         fts = "{name terms signature doc path} : (" + " OR ".join(f'"{t}"*' for t in terms) + ")"
         sql = ("SELECT s.id,s.path,s.name,s.qualname,s.kind,s.signature,s.start_line,s.end_line,s.doc,s.tokens,s.body_hash,"
                "bm25(symbols_fts, 10.0, 4.0, 2.0, 1.5, 1.0, 0.0) AS score "
@@ -559,14 +563,24 @@ class CodeIndex:
                "WHERE symbols_fts MATCH ? AND s.kind IN ('function','method','class','struct') ORDER BY score LIMIT ?")
         return [dict(r) for r in self.db.execute(sql, (fts, limit))]
 
+    def fusion_weights(self, with_vectors: bool) -> tuple:
+        """RRF weights (name, body[, vectors]); defaults tuned on tests/evals, overridable by `tune_weights`."""
+        fw = self.cfg.get("fusion_weights") or {}
+        w = fw.get("with_vectors") if with_vectors else fw.get("lexical")
+        return tuple(w) if w else ((1.0, 0.5, 2.0) if with_vectors else (1.0, 0.8))
+
+    def user_synonyms(self) -> dict[str, list[str]]:
+        """Learned / configured rules from .specforge/config.json `synonyms` (see suggest_corrections)."""
+        return {stem(k.lower()): [str(x).lower() for x in v] for k, v in (self.cfg.get("synonyms") or {}).items()}
+
     def hybrid_search(self, query: str, limit: int = 20, kind: str | None = None, path_prefix: str | None = None,
-                      vector_hits: list[dict] | None = None) -> list[dict]:
+                      vector_hits: list[dict] | None = None, weights: tuple | None = None) -> list[dict]:
         """Reciprocal-rank fusion of name/signature BM25, body-vocabulary BM25 and (optional) embedding hits."""
         lists = [self.search(query, kind=kind, path_prefix=path_prefix, limit=60), self.search_body(query, 60)]
         if vector_hits:
             lists.append(vector_hits)
         fused: dict[int, dict] = {}
-        weights = (1.0, 0.5, 2.0) if vector_hits else (1.0, 0.8)  # tuned on tests/evals (see BENCHMARKS.md)
+        weights = weights or self.fusion_weights(bool(vector_hits))
         for weight, lst in zip(weights, lists):
             for rank, r in enumerate(lst):
                 e = fused.setdefault(r["id"], {**r, "rrf": 0.0})
@@ -639,7 +653,8 @@ class CodeIndex:
         if not words:
             return "No meaningful keywords in task.", []
         stems = list(dict.fromkeys(stem(w) for w in words))
-        extra = list(dict.fromkeys(x for st in stems for k, v in SYNONYMS.items() if st.startswith(k) for x in v))
+        syn = {**SYNONYMS, **self.user_synonyms()}
+        extra = list(dict.fromkeys(x for st in stems for k, v in syn.items() if st.startswith(k) for x in v))
         hits = self.search(" ".join(words + extra), limit=100)
         sem_rank: dict[int, int] = {}
         if self.cfg.get("semantic_context", True):

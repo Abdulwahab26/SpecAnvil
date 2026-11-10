@@ -1014,9 +1014,95 @@ def cross_repo_map(ix: CodeIndex) -> dict:
     return {"repos": {k: {"root": str(v.root), "publishes": published[k]} for k, v in repos.items()}, "edges": edges}
 
 
+JS_NAMED_RX = re.compile(r"""import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?(?:\*\s+as\s+(\w+))?\s*from\s*['"]([^'"]+)['"]""")
+JS_REQ_RX = re.compile(r"""(?:const|let|var)\s+(?:\{([^}]*)\}|(\w+))\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)""")
+PY_FROM_NAMES_RX = re.compile(r"^\s*from\s+([\w.]+)\s+import\s+\(?([^)#]+)\)?", re.M)
+
+
+def _imported_names(stmt: str) -> list[tuple[str, list[str]]]:
+    """(module, [names]) pairs from one import statement (JS/TS ESM + CommonJS, Python)."""
+    out = []
+    for m in JS_NAMED_RX.finditer(stmt):
+        default, named, star, mod = m.groups()
+        names = [x.split(" as ")[0].strip() for x in (named or "").split(",") if x.strip()]
+        if default:
+            names.append("default")
+        out.append((mod, names or ["*"]))
+    for m in JS_REQ_RX.finditer(stmt):
+        named, whole, mod = m.groups()
+        out.append((mod, [x.split(":")[0].strip() for x in named.split(",") if x.strip()] if named else ["*"]))
+    for m in PY_FROM_NAMES_RX.finditer(stmt):
+        out.append((m.group(1), [x.split(" as ")[0].strip() for x in m.group(2).split(",") if x.strip()]))
+    return out
+
+
+def group_contracts(ix: CodeIndex, members: list[str] | None = None, limit: int = 60) -> dict:
+    """De-facto API contracts across a group of repos: which symbols one repo publishes that others import, who
+    consumes each, and the provider-side signature. That set is the breaking-change surface between them."""
+    from . import sources as _src
+    repos = {"(this repo)": ix}
+    for name in _src.registry():
+        if members and name not in members:
+            continue
+        try:
+            repos[name] = _src.open_source(name)
+        except ValueError:
+            continue
+    published = {k: _package_name(v.root) for k, v in repos.items()}
+    contracts: dict[tuple, dict] = {}
+    unresolved = Counter()
+    for a, ia in repos.items():
+        for path, stmt in ia.db.execute("SELECT path, source FROM imports"):
+            for mod, names in _imported_names(stmt):
+                for b, pkgs in published.items():
+                    if b == a or not any(mod == n or mod.startswith(n + "/") or mod.startswith(n.replace("-", "_") + ".")
+                                         or mod == n.replace("-", "_") for n in pkgs):
+                        continue
+                    ib = repos[b]
+                    for nm in names:
+                        if nm in ("*", "default"):
+                            key = (b, f"{mod} ({nm})", "", "module")
+                        else:
+                            mods = sorted((x[0] for x in ib.db.execute(
+                                "SELECT path FROM files WHERE path GLOB ? OR path GLOB ? OR path GLOB ?",
+                                (f"*{nm}.py", f"*{nm}/__init__.py", f"*{nm}.ts")) if _prod(x[0])
+                                and x[0].rsplit("/", 1)[-1].split(".")[0] in (nm, "__init__")), key=lambda x: x.count("/"))
+                            mod_file = (mods[0],) if mods else None
+                            src_mod = mod.replace(".", "/")
+                            reexport = ib.db.execute("SELECT path FROM files WHERE path IN (?, ?, ?, ?)",
+                                                     (src_mod + ".py", src_mod + "/__init__.py", src_mod + ".ts",
+                                                      src_mod + "/index.ts")).fetchone()
+                            rows = [x for x in ib.db.execute(
+                                "SELECT path, qualname, kind, signature, exported FROM symbols WHERE name=? AND "
+                                "kind NOT IN ('field', 'key', 'section') AND qualname=name", (nm,)) if _prod(x["path"])]
+                            rows.sort(key=lambda x: (-x["exported"], x["path"].count("/")))
+                            if rows:
+                                r = rows[0]
+                                key = (b, f"{r['path']}::{r['qualname']}", r["signature"], r["kind"])
+                            elif mod_file:
+                                key = (b, mod_file[0], "", "module")
+                            elif reexport:
+                                key = (b, f"{reexport[0]}::{nm}", "", "re-export")
+                            else:
+                                unresolved[f"{b}:{nm}"] += 1
+                                continue
+                        c = contracts.setdefault(key, {"provider": b, "symbol": key[1], "kind": key[3],
+                                                       "signature": key[2][:200], "consumers": {}})
+                        c["consumers"].setdefault(a, set()).add(path)
+    rows = [{**c, "consumer_repos": len(c["consumers"]), "consumer_files": sum(len(v) for v in c["consumers"].values()),
+             "consumers": {k: sorted(v)[:5] for k, v in c["consumers"].items()}} for c in contracts.values()]
+    rows.sort(key=lambda r: (-r["consumer_repos"], -r["consumer_files"]))
+    by_provider = Counter(r["provider"] for r in rows)
+    return {"repos": list(repos), "contracts": rows[:limit], "contract_count": len(rows),
+            "by_provider": dict(by_provider), "unresolved_names": dict(unresolved.most_common(10)),
+            "note": "Register other repos with add_source path:/gh: (or add_pack) so they join the group."}
+
+
 def file_risk(ix: CodeIndex, path: str) -> dict:
-    """Per-symbol composite risk for one file (complexity .3, callers .25, untested .25, churn .1, size .1)."""
+    """Per-symbol composite risk for one file (complexity .3, callers .25, untested .25, churn .1, size .1;
+    +0.1 for heavy runtime traffic when traces are imported)."""
     from .analysis import churn
+    from .runtime import latency_of
     if not ix.db.execute("SELECT 1 FROM files WHERE path=?", (path,)).fetchone():
         raise ValueError(f"Not indexed: {path}")
     g = CodeGraph(ix)
@@ -1030,7 +1116,12 @@ def file_risk(ix: CodeIndex, path: str) -> dict:
         untested = r["name"] not in tests
         risk = round(0.3 * min(1, c["cyclomatic"] / 12) + 0.25 * min(1, callers / 10) + 0.25 * untested
                      + 0.1 * min(1, (ch ** 0.5) / 20) + 0.1 * min(1, c["lines"] / 120), 2)
-        out.append({"ref": r["qualname"], "line": r["start_line"], "risk": risk, "cyclomatic": c["cyclomatic"],
-                    "callers": callers, "tested": not untested, "lines": c["lines"]})
+        row = {"ref": r["qualname"], "line": r["start_line"], "risk": risk, "cyclomatic": c["cyclomatic"],
+               "callers": callers, "tested": not untested, "lines": c["lines"]}
+        lat = latency_of(ix, path, r["qualname"])
+        if lat:  # runtime traces imported: hot and slow code is riskier to change
+            row["runtime"] = lat
+            row["risk"] = round(min(1.0, risk + 0.1 * min(1, lat["hits"] / 1000)), 2)
+        out.append(row)
     out.sort(key=lambda x: -x["risk"])
     return {"file": path, "churn_90d": ch, "max_risk": out[0]["risk"] if out else 0, "symbols": out[:40]}

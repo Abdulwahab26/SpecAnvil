@@ -168,6 +168,7 @@ def _guard(payload: dict) -> int:
     """PreToolUse guardrail: deny access to secret files. Exit 2 blocks the tool call in Claude Code."""
     import os
     import shlex
+
     from .config import load_config
     from .scanner import is_secret
     if os.environ.get("SPECFORGE_ALLOW_SECRETS") == "1":
@@ -395,6 +396,7 @@ def cmd_source(args) -> int:
 def cmd_watch(args) -> int:
     """Keep the index fresh while you (or any tool) edit files. Polling: ~0.1 s per pass on a 5k-file repo."""
     import time as _time
+
     from .index import CodeIndex
     ix = CodeIndex(_root(args))
     print(f"watching {ix.root} every {args.interval}s (Ctrl-C to stop)")
@@ -468,7 +470,7 @@ def cmd_pack(args) -> int:
 
 
 def cmd_insight(args) -> int:
-    from . import agentaudit, history, insights
+    from . import agentaudit, history, insights, regret, runtime
     from .index import CodeIndex
     ix = CodeIndex(_root(args))
     ix.build()
@@ -486,6 +488,11 @@ def cmd_insight(args) -> int:
         "provenance": lambda: history.provenance(ix, t), "diff": lambda: history.symbol_diff(ix, t or "HEAD"),
         "digest": lambda: history.digest(ix, t or "1 day ago"), "delivery": lambda: history.delivery_metrics(ix, args.days),
         "churn": lambda: history.churn_rate(ix, t, args.days), "audit": lambda: agentaudit.audit(ix.root),
+        "trace-import": lambda: runtime.import_trace(ix, t), "hot": lambda: runtime.hot_paths(ix, args.limit, t),
+        "unused": lambda: runtime.unused_paths(ix, args.days, args.limit),
+        "corrections": lambda: regret.suggest_corrections(ix, args.days, args.apply),
+        "tune": lambda: regret.tune_weights(ix, t, args.days, args.apply),
+        "contracts": lambda: insights.group_contracts(ix, None, args.limit),
     }.get(w)
     if fn is None:
         print("unknown insight", file=sys.stderr)
@@ -652,7 +659,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("insight", help="health | untested | similar | complexity | extract | entry | chains | tectonic | "
                                        "architecture | decorators | flow | columns | safety | endpoint | risk-file | "
-                                       "provenance | diff | digest | delivery | churn | audit")
+                                       "provenance | diff | digest | delivery | churn | audit | trace-import <file> | "
+                                       "hot | unused | corrections [--apply] | tune [eval.json] [--apply] | contracts")
     p.add_argument("what")
     p.add_argument("target", nargs="?")
     p.add_argument("--path")
@@ -661,6 +669,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--days", type=int, default=90)
     p.add_argument("--action", choices=["edit", "delete", "rename"])
     p.add_argument("--new-name")
+    p.add_argument("--apply", action="store_true", help="corrections / tune: save the result to .specforge/config.json")
     p.set_defaults(fn=cmd_insight)
 
     p = sub.add_parser("diagram", help="Mermaid: call | class | deps | modules | sequence | tectonic  (-o x.html / x.md)")

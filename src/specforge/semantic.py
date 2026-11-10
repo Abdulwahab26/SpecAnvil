@@ -39,11 +39,14 @@ class _FastEmbed:
     def __init__(self, model: str, allow_download: bool = False):
         """Loads strictly from the local cache. Only the explicit `specforge embed` step may download."""
         import os
+
         from .profile import home
         os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
         if not allow_download:
             os.environ["HF_HUB_OFFLINE"] = "1"  # no update checks at query time
-        from fastembed import TextEmbedding  # optional dependency: pip install "specforge[semantic]"
+        from fastembed import (
+            TextEmbedding,  # optional dependency: pip install "specforge[semantic]"
+        )
         cache = str(home() / "models")
         try:
             self.model = TextEmbedding(model, cache_dir=cache, local_files_only=True)

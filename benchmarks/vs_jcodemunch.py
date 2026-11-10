@@ -9,6 +9,7 @@ a second pass reports the same 15 lookups in one session with dedupe ON.
 """
 import asyncio
 import json
+import os
 import sys
 import time
 
@@ -30,7 +31,7 @@ def text_of(res) -> str:
 
 async def run_repo(path: str, dedupe: bool, full: bool = False) -> dict:
     out = {"repo": path.rstrip("/").split("/")[-1], "queries": []}
-    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=path, env=None)
+    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=path, env={**os.environ, "SPECFORGE_TOOLS": "full"})
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()

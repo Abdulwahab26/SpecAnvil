@@ -59,6 +59,8 @@ jobs:
         run: python tests/evals/run_semantic_eval.py corpus tests/evals/semantic_fullstack_fastapi.json
       - name: Every analysis, history and session tool over MCP stdio (fails on any tool error)
         run: python tests/mcp_v05_tools.py corpus
+      - name: Default lite tier, live tier switching, OTel ingestion, regret mining, contracts, handoff (end to end)
+        run: python tests/mcp_v06_tools.py corpus
 
   package:
     runs-on: ubuntu-latest

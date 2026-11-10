@@ -2,6 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from specforge.bootstrap import MARK_START, run
 from specforge.index import CodeIndex, module_of, split_terms, stem
 from specforge.parser import _parse_regex, parse_source
@@ -188,6 +190,7 @@ def test_plan_validation_catches_bad_plans(tmp_path):
 
 def test_blocked_requires_reason(tmp_path):
     import pytest
+
     from specforge import testing
     root = make_repo(tmp_path)
     d = testing.plan_dir(root, "orders")
@@ -199,6 +202,7 @@ def test_blocked_requires_reason(tmp_path):
 
 def test_profile_models_render_into_agents(tmp_path, monkeypatch):
     import pytest
+
     from specforge import profile
     from specforge.bootstrap import sync_agents
     monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
@@ -686,8 +690,6 @@ def test_route_handlers_exercised_over_http_count_as_tested(tmp_path):
 
 
 def test_reparse_after_grammar_download_really_reparses(tmp_path, monkeypatch):
-    import pytest
-
     from specforge import parser
     (tmp_path / "svc.py").write_text("class Svc:\n    def run(self):\n        return 1\n")
     monkeypatch.setattr(parser, "local_grammars", lambda refresh=False: set())
@@ -710,3 +712,114 @@ def test_crlf_files_parse_like_lf(tmp_path):
     q = {(r["qualname"], r["kind"]) for r in ix.db.execute("SELECT qualname, kind FROM symbols")}
     assert {("jobs.build.runs-on", "key"), ("MAX", "constant"), ("User.name", "field"), ("User.go", "function"),
             ("A > B", "section")} <= q
+
+
+# ----------------------------------------------------------------------------- v0.6: runtime, regret, tiers, contracts, handoff
+
+def _otlp(path: Path, spans: list[tuple[dict, float]]) -> None:
+    t, out = 1_700_000_000_000_000_000, []
+    for attrs, ms in spans:
+        t += 10_000_000
+        out.append({"name": attrs.get("name", "s"), "startTimeUnixNano": str(t), "endTimeUnixNano": str(t + int(ms * 1e6)),
+                    "attributes": [{"key": k, "value": {"stringValue": v} if isinstance(v, str) else {"intValue": v}}
+                                   for k, v in attrs.items() if k != "name"]})
+    path.write_text(json.dumps({"resourceSpans": [{"scopeSpans": [{"spans": out}]}]}))
+
+
+def test_otel_trace_ingestion_and_latency(tmp_path):
+    import gzip
+
+    from specforge import runtime as R
+    root = _insight_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    trace = tmp_path / "t.json"
+    _otlp(trace, [({"code.filepath": str(root / "app" / "crud.py"), "code.function": "create_user"}, 5.0)] * 9
+          + [({"code.filepath": "app/crud.py", "code.function": "create_user"}, 50.0)]
+          + [({"http.route": "/api/v1/users/signup", "http.method": "POST"}, 12.0)] * 3
+          + [({"name": "nothing.matches"}, 1.0)])
+    (tmp_path / "t.json.gz").write_bytes(gzip.compress(trace.read_bytes()))
+    res = R.import_trace(ix, tmp_path / "t.json.gz")
+    assert (res["spans"], res["mapped"]) == (14, 13)
+    hot = {h["ref"]: h for h in R.hot_paths(ix)}
+    cu = hot["app/crud.py::create_user"]
+    assert cu["hits"] == 10 and cu["p50_ms"] == 5.0 and cu["p95_ms"] == 50.0
+    assert hot["app/api.py::signup"]["hits"] == 3  # HTTP span with an app prefix -> route handler
+    unused = R.unused_paths(ix)
+    assert "app/crud.py::_never_used" in unused["never_executed"]
+    assert R.import_trace(ix, tmp_path / "t.json.gz")["mapped"] == 13
+    assert R.hot_paths(ix)[0]["hits"] == 20  # re-import accumulates
+    assert "runtime" in next(s for s in I_file_risk(ix, "app/crud.py") if s["ref"] == "create_user")
+
+
+def I_file_risk(ix, path):
+    from specforge import insights as I
+    return I.file_risk(ix, path)["symbols"]
+
+
+def test_regret_ledger_suggests_and_applies_synonyms(tmp_path):
+    from specforge import regret
+    root = _insight_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    for q in ("register account", "register member", "register person"):
+        out = "\n".join(f"[{r['id']}] {r['kind']} {r['qualname']}" for r in ix.search(q, limit=5))
+        regret.log_call(ix, "s1", "search_symbols", {"query": q}, out)
+        regret.log_call(ix, "s1", "get_symbol", {"ref": "app/crud.py::create_user"}, "")
+    rep = regret.suggest_corrections(ix, apply=True)
+    assert rep["queries"] == 3 and rep["fetches_after_search"] == 3
+    rule = next(s for s in rep["synonym_suggestions"] if s["when_query_has"].startswith("regist"))
+    assert rule["evidence"] == 3 and "applied" in rep
+    ix2 = CodeIndex(root)
+    assert any(r["qualname"] == "create_user" for r in ix2.search("register account", limit=5))
+
+
+def test_tune_weights_needs_cases_and_reports(tmp_path):
+    from specforge import regret
+    root = _insight_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    ev = tmp_path / "ev.json"
+    ev.write_text(json.dumps({"cases": [{"query": q, "expected": [e]} for q, e in
+                                        [("create user", "create_user"), ("signup", "signup"), ("notify bus", "notify"),
+                                         ("listen bus", "listen"), ("helper items price", "helper_a")]]}))
+    res = regret.tune_weights(ix, str(ev), apply=True)
+    assert res["cases"] == 5 and res["best"]["mrr"] >= res["current"]["mrr"]
+    with pytest.raises(ValueError):
+        regret.tune_weights(ix)  # empty ledger: refuses to tune on nothing
+
+
+def test_handoff_validation(tmp_path):
+    from specforge import handoff
+    root = _insight_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    good = {"Summary": "Signup flow reviewed end to end.", "Scope": "app/api.py and app/crud.py only.",
+            "Findings": "Signup calls `app/crud.py::create_user` directly.", "Evidence": "See `app/api.py:5`.",
+            "Recommendations": "Validate payload before persisting.", "Risks": "None beyond the signup path.",
+            "Next steps": "Add a test for an empty payload."}
+    res = handoff.finalize(ix, "Signup audit", good)
+    assert res["written"] and not res["errors"] and res["references"] == 2
+    text = (root / res["path"]).read_text()
+    assert "status: verified" in text and text.index("## Summary") < text.index("## Next steps")
+    bad = handoff.finalize(ix, "Bad", {"Summary": "TBD", "Findings": "`app/crud.py::ghost` and `app/api.py:999`"})
+    assert not bad["written"] and len(bad["errors"]) >= 6
+
+
+def test_compact_schema_keeps_arguments():
+    from specforge.server import _compact_schema
+    s = {"title": "fArguments", "type": "object", "properties": {
+        "q": {"title": "Q", "type": "string"}, "k": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "K"},
+        "m": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "M"}}, "required": ["q"]}
+    out = _compact_schema(s)
+    assert out == {"type": "object", "required": ["q"], "properties": {
+        "q": {"type": "string"}, "k": {"type": "string", "default": None},
+        "m": {"anyOf": [{"type": "integer"}, {"type": "string"}]}}}
+
+
+def test_contract_import_parsing():
+    from specforge.insights import _imported_names
+    assert _imported_names("import { a, b as c } from 'lib/x'") == [("lib/x", ["a", "b"])]
+    assert _imported_names("import D, { e } from \"lib\"") == [("lib", ["e", "default"])]
+    assert _imported_names("const { f, g: h } = require('lib')") == [("lib", ["f", "g"])]
+    assert _imported_names("from fastapi import APIRouter, Depends") == [("fastapi", ["APIRouter", "Depends"])]

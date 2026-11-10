@@ -14,22 +14,24 @@ import time
 from pathlib import Path
 
 try:
+    from mcp.server.mcpserver import Context
     from mcp.server.mcpserver import MCPServer as _Server  # mcp >= 2
     from mcp.server.mcpserver.exceptions import ToolError
 except ImportError:  # pragma: no cover
+    from mcp.server.fastmcp import Context
     from mcp.server.fastmcp import FastMCP as _Server  # mcp 1.x
     from mcp.server.fastmcp.exceptions import ToolError
 
-from .config import load_config
-from .index import CodeIndex
-from .specs import drift as _drift
-from .specs import headings, list_specs, read_section, specs_root
+from . import analysis as _analysis
 from . import profile as _profile
-from .docs import DocEngine
 from . import testing as _testing
 from . import tickets as _tickets
-from . import analysis as _analysis
+from .config import load_config
+from .docs import DocEngine
+from .index import CodeIndex
 from .session import Session
+from .specs import drift as _drift
+from .specs import headings, list_specs, read_section, specs_root
 from .tokens import estimate_tokens
 
 INSTRUCTIONS = """SpecForge code index for this repository. Prefer these tools over reading whole files:
@@ -48,9 +50,14 @@ _session = Session(ROOT)
 # report a token baseline. (functools.wraps keeps the signature, so MCP schemas are unchanged.)
 import contextvars  # noqa: E402
 import functools  # noqa: E402
+import inspect  # noqa: E402
 
 _CALL = contextvars.ContextVar("specforge_call", default=None)
 _orig_tool = mcp.tool
+
+
+_FUNCS: dict = {}  # every tool function by name, including tools hidden by the current tier (see run_tool)
+_SESSION_ID = f"{os.getpid()}-{int(time.time())}"
 
 
 def _timed_tool(*dargs, **dkwargs):
@@ -58,6 +65,7 @@ def _timed_tool(*dargs, **dkwargs):
 
     def wrap(fn):
         name = dkwargs.get("name") or fn.__name__
+        sig = inspect.signature(fn)
 
         @functools.wraps(fn)
         def inner(*args, **kwargs):
@@ -72,9 +80,17 @@ def _timed_tool(*dargs, **dkwargs):
                         ix().record(name, out, 0, (time.perf_counter() - state["t0"]) * 1000)
                     except Exception:  # noqa: BLE001 - stats must never break a tool
                         pass
+                if isinstance(out, str):
+                    try:
+                        from . import regret
+                        bound = sig.bind_partial(*args, **kwargs).arguments
+                        regret.log_call(ix(), _SESSION_ID, name, bound, out)
+                    except Exception:  # noqa: BLE001 - the regret ledger must never break a tool
+                        pass
                 return out
             finally:
                 _CALL.reset(token)
+        _FUNCS[name] = inner
         return register(inner)
     return wrap
 
@@ -1012,29 +1028,184 @@ def add_pack(spec: str) -> str:
         raise ToolError(f"Could not add pack: {e}") from e
 
 
+# ----------------------------------------------------------------------------- runtime traces, regret, contracts, handoff
+
+@mcp.tool()
+def import_runtime_trace(path: str, source: str = "otel") -> str:
+    """Ingest an OpenTelemetry trace export (OTLP JSON / JSON lines, .gz ok) or flat span lines; spans are mapped
+    to symbols by code.* attributes, HTTP route, or name. Stored locally; enables per-symbol latency."""
+    from . import runtime as R
+    return _run(R.import_trace, ix(), path, source)
+
+
+@mcp.tool()
+def runtime_hot_paths(limit: int = 20, name: str = "", sort_by: str = "count") -> str:
+    """Symbols ranked by runtime hits from imported traces (sort_by count | p95 | total) with p50/p95/max ms."""
+    from . import runtime as R
+    if not R.has_traces(ix()):
+        raise ToolError("No runtime traces yet. Call import_runtime_trace(path) first.")
+    return _j(R.hot_paths(ix(), limit, name or None, sort_by))
+
+
+@mcp.tool()
+def runtime_unused(days: int = 30, limit: int = 50) -> str:
+    """Functions in traced files with no runtime hits (or none in `days`): reachable on paper, never executed."""
+    from . import runtime as R
+    return _run(R.unused_paths, ix(), days, limit)
+
+
+@mcp.tool()
+def suggest_corrections(days: int = 30, apply: bool = False) -> str:
+    """Why searches miss, mined from this repo's local query/fetch ledger (zero results, re-asked queries,
+    reads outside the top 5, vocabulary gaps), with synonym rules; apply=True saves them to config."""
+    from . import regret
+    return _run(regret.suggest_corrections, ix(), days, apply)
+
+
+@mcp.tool()
+def tune_weights(eval_file: str = "", days: int = 90, apply: bool = False) -> str:
+    """Grid-search hybrid search fusion weights for MRR on an eval file (cases: query/task + expected) or on the
+    ledger's query -> fetched pairs. Saved only with apply=True and a real gain."""
+    from . import regret
+    return _run(regret.tune_weights, ix(), eval_file or None, days, apply)
+
+
+@mcp.tool()
+def group_contracts(members: list[str] | None = None, limit: int = 60) -> str:
+    """APIs shared across a group of repos (this one + registered sources/packs): provider symbol, signature,
+    consuming repos and files. The breaking-change surface between them."""
+    from . import insights as I
+    return _run(I.group_contracts, ix(), members, limit)
+
+
+@mcp.tool()
+def finalize_handoff(title: str, sections: dict[str, str], kind: str = "audit", force: bool = False) -> str:
+    """Write one validated Markdown handoff (kind: audit | investigation | review | design) to specs/handoffs:
+    required sections, no placeholders, every `path::Symbol` / `path:line` checked against the index."""
+    from . import handoff
+    return _run(handoff.finalize, ix(), title, sections, kind, force)
+
+
+@mcp.tool()
+def run_tool(name: str, arguments: dict | None = None) -> str:
+    """Call any SpecForge tool by name, including ones not loaded in the current tier. set_tool_tier() lists them."""
+    fn = _FUNCS.get(name)
+    if fn is None or name == "run_tool":
+        import difflib
+        raise ToolError(f"Unknown tool '{name}'. Close: {difflib.get_close_matches(name, list(_FUNCS), 5)}")
+    try:
+        return fn(**(arguments or {}))
+    except TypeError as e:
+        raise ToolError(f"Bad arguments for {name}: {e}") from e
+
+
 # ----------------------------------------------------------------------------- tool tiers
-# Every tool schema costs tokens on every turn. Tiers expose only what a session needs.
+# Every tool schema costs tokens on every turn. Tiers expose only what a session needs; set_tool_tier switches
+# at runtime (tools/list_changed), and run_tool reaches any tool even on clients that ignore that notification.
 TIERS = {
-    "core": {"repo_map", "get_context", "search_symbols", "file_outline", "get_symbol", "get_symbols",
-             "find_references", "read_spec", "token_savings"},
+    "lite": {"repo_map", "get_context", "search_symbols", "get_symbol", "set_tool_tier", "run_tool"},
 }
+TIERS["core"] = TIERS["lite"] | {"file_outline", "get_symbols", "find_references", "read_spec", "token_savings"}
 TIERS["standard"] = TIERS["core"] | {"search_code", "changed_symbols", "impact_of", "hotspots", "list_specs",
                                      "spec_drift", "project_profile", "get_profile", "reindex", "call_hierarchy",
-                                     "class_hierarchy", "search_ast", "plan_refactor", "list_sources"}
-TIERS["standard"] |= {"check_safety", "plan_turn", "find_implementations", "dependency_graph", "get_file_content",
-                       "index_status"}
+                                     "class_hierarchy", "search_ast", "plan_refactor", "list_sources", "check_safety",
+                                     "plan_turn", "find_implementations", "dependency_graph", "get_file_content",
+                                     "index_status", "finalize_handoff"}
 TIERS["analysis"] = TIERS["standard"] | {"symbol_importance", "dead_code", "dependency_cycles", "coupling",
                                          "layer_violations", "pr_risk", "symbol_complexity", "file_risk",
                                          "untested_symbols", "similar_symbols", "related_symbols",
                                          "extraction_candidates", "signal_chains", "entry_points", "tectonic_map",
                                          "architecture_metrics", "repo_health", "winnow_symbols", "endpoint_impact",
                                          "flow_edges", "symbol_provenance", "symbol_diff", "churn_rate",
-                                         "render_diagram", "search_columns", "list_packs", "add_pack"}
-TIER = (os.environ.get("SPECFORGE_TOOLS") or load_config(ROOT).get("tool_tier") or "full").lower()
-if TIER in TIERS:
-    for _t in list(mcp._tool_manager._tools if hasattr(mcp, "_tool_manager") else []):
-        if _t not in TIERS[TIER]:
-            mcp.remove_tool(_t)
+                                         "render_diagram", "search_columns", "list_packs", "add_pack",
+                                         "runtime_hot_paths", "runtime_unused", "group_contracts"}
+MODEL_TIERS = [("haiku", "core"), ("sonnet", "standard"), ("opus", "analysis"), ("fable", "analysis"),
+               ("mythos", "analysis")]
+_ALL_TOOLS: dict = {}
+TIER = "full"
+
+
+def _apply_tier(names: set[str] | None) -> list[str]:
+    """Show exactly `names` (None = everything). Returns the tool names now visible."""
+    tm = mcp._tool_manager._tools
+    if not _ALL_TOOLS:
+        _ALL_TOOLS.update(tm)
+    want = set(_ALL_TOOLS) if names is None else (names & set(_ALL_TOOLS))
+    for n in list(tm):
+        if n not in want:
+            del tm[n]
+    for n in want:
+        tm.setdefault(n, _ALL_TOOLS[n])
+    return sorted(want)
+
+
+@_orig_tool()
+async def set_tool_tier(tier: str = "", enable: list[str] | None = None, model: str = "",
+                        ctx: Context | None = None) -> str:
+    """Change the loaded tool set: tier lite | core | standard | analysis | full, and/or enable extra tools by
+    name, or pass your model id to pick a tier. No arguments: list every tool by tier."""
+    global TIER
+    if not tier and not enable and not model:
+        groups, seen = {}, set()
+        for t in ("lite", "core", "standard", "analysis"):
+            groups[t] = sorted(TIERS[t] - seen)
+            seen |= TIERS[t]
+        groups["full"] = sorted(set(_ALL_TOOLS or mcp._tool_manager._tools) - seen)
+        return _j({"current": TIER, "tiers_add": groups})
+    if model and not tier:
+        tier = next((t for k, t in MODEL_TIERS if k in model.lower()), TIER)
+    tier = (tier or TIER).lower()
+    if tier not in TIERS and tier != "full":
+        raise ToolError(f"Unknown tier '{tier}'. Use one of {sorted(TIERS) + ['full']}.")
+    names = None if tier == "full" else set(TIERS[tier])
+    if enable:
+        unknown = [e for e in enable if e not in _ALL_TOOLS]
+        if unknown:
+            raise ToolError(f"Unknown tools {unknown}")
+        names = None if names is None else names | set(enable)
+    before = set(mcp._tool_manager._tools)
+    visible = _apply_tier(names)
+    TIER = tier
+    if ctx is not None:
+        try:
+            # classic notifications/tools/list_changed (what Claude Code and most clients listen for) ...
+            await ctx.session.send_tool_list_changed()
+            # ... and the newer subscriptions/listen event where the SDK has it
+            if hasattr(ctx, "notify_tools_changed"):
+                await ctx.notify_tools_changed()
+        except Exception:  # noqa: BLE001 - some clients/transports don't take notifications
+            pass
+    added = sorted(set(visible) - before)
+    return _j({"tier": tier, "tools": len(visible), "added": added, "removed": sorted(before - set(visible)),
+               "note": "If your client does not refresh its tool list, call run_tool(name, arguments)."})
+
+
+def _compact_schema(node):
+    """Drop pydantic's auto titles and collapse Optional[X] (anyOf X|null) to X: same arguments, fewer tokens on
+    every turn. Arguments are still validated against the Python signature."""
+    if isinstance(node, dict):
+        node.pop("title", None)
+        any_of = node.get("anyOf")
+        if isinstance(any_of, list):
+            rest = [x for x in any_of if x != {"type": "null"}]
+            if len(rest) == 1 and len(rest) < len(any_of):
+                node.pop("anyOf")
+                node.update(rest[0])
+        if node.get("additionalProperties") is True and node.get("type") == "object":
+            node.pop("additionalProperties")
+        for v in list(node.values()):
+            _compact_schema(v)
+    elif isinstance(node, list):
+        for v in node:
+            _compact_schema(v)
+    return node
+
+
+for _tool in mcp._tool_manager._tools.values():
+    _compact_schema(_tool.parameters)
+_ALL_TOOLS.update(mcp._tool_manager._tools)
+TIER = (os.environ.get("SPECFORGE_TOOLS") or load_config(ROOT).get("tool_tier") or "lite").lower()
+_apply_tier(None if TIER == "full" or TIER not in TIERS else set(TIERS[TIER]))
 
 
 def main() -> None:

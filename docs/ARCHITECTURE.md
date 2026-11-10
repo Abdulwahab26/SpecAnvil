@@ -143,3 +143,15 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Decision.** CI runs the context eval on a pinned public repo and fails below recall@any 0.95 or MRR 0.75, alongside unit tests on three OSes and three Python versions, and a clean-venv wheel smoke test. Releases are cut from tags with the CHANGELOG section as notes.
 **Why.** Ranking changes regress silently. A number in a README is a claim; a failing build is enforcement (the same principle as ADR-7 and ADR-10).
 
+### ADR-18: Runtime traces are mapped to symbols locally, by evidence order
+**Decision.** `import_runtime_trace` reads OTLP JSON (document or lines, gzip) and flat span lines, and maps each span by `code.*` attributes (path suffix + function + line range), then by HTTP route to the extracted handler (suffix match, so app prefixes like `/api/v1` resolve), then by an unambiguous qualified or plain name. It stores only count, total time and a bounded latency sample (500) per symbol; other span attributes are dropped.
+**Why.** Static analysis says what *can* run; traces say what *does*, and how slowly. Keeping only aggregates keeps payloads, user ids and URLs out of the index. Measured on a synthetic export: 190 of 191 spans mapped (the miss is a span with no code identity), p95 correct to the sample.
+
+### ADR-19: Learn from retrieval regret, but only apply with evidence
+**Decision.** The tool wrapper logs each search query with the ids it returned and each fetch that followed (local SQLite, never sent anywhere). `suggest_corrections` mines zero results, reformulations and reads outside the top 5, and proposes synonym rules only when the same gap appears at least twice; `apply=True` writes them to config, where both `search_symbols` and `get_context` use them. `tune_weights` changes fusion weights only with `apply=True` and a gain over 0.01 MRR.
+**Why.** Fixed vocabularies miss each team's words ("register" for create_user). Automatic, unreviewed re-ranking drifts; evidence thresholds and an explicit apply keep it reproducible. The eval gate in CI still guards the defaults.
+
+### ADR-20: A tiny default surface with runtime switching and a dispatcher fallback
+**Decision.** The default tier is `lite` (6 tools). `set_tool_tier` re-registers tools at runtime and sends the classic `notifications/tools/list_changed` (plus the SDK's newer subscription event); `run_tool(name, arguments)` calls any tool regardless of tier. Advertised schemas drop auto-generated titles and collapse `Optional[X]` to `X`; validation still uses the Python signature.
+**Why.** Schemas are paid on every turn. Some clients have open issues about not refreshing on list-changed mid-session, so switching alone would strand tools; the dispatcher guarantees reachability. Result: ~790 tokens default (jCodeMunch ~1,050), ~7,870 for all 92 tools (jCodeMunch ~28,142).
+

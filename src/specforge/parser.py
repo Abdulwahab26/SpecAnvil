@@ -10,7 +10,6 @@ import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
-
 try:  # pragma: no cover - import guard
     import tree_sitter_language_pack as tslp
 except Exception:  # noqa: BLE001

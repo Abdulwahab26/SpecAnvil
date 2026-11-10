@@ -1,6 +1,7 @@
 """End-to-end smoke test: start specforge-mcp over stdio like Claude Code does and call every tool."""
 import asyncio
 import json
+import os
 import sys
 
 from mcp import ClientSession
@@ -27,7 +28,7 @@ CALLS = [
 
 
 async def main():
-    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=ROOT)
+    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=ROOT, env={**os.environ, "SPECFORGE_TOOLS": "full"})
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()

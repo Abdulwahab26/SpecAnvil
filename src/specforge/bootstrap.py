@@ -270,6 +270,8 @@ Models per role live in your personal profile: `/sf:profile` or `specforge profi
 ### Code navigation (saves tokens)
 Use the **specforge** MCP before reading files: `repo_map`, `get_context(task)`, `search_symbols`, `file_outline`,
 `get_symbol`, `find_references`, `read_spec(path, section)`. Read a whole file only when editing most of it.
+SpecForge starts with a small tool set to save tokens. When a command names a tool you don't have, call
+`set_tool_tier("standard" | "analysis" | "full")` once, or `run_tool(name, arguments)` for a single call.
 
 ### Commands
 {cmds}

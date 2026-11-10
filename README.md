@@ -15,9 +15,10 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 | Measured | Result |
 |---|---|
 | jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **66% fewer tokens** than jCodeMunch (5,924 vs 17,581) |
-| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **2–6× faster** (0.27 / 3.44 / 0.39 s vs 1.72 / 7.07 / 1.56 s) |
+| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **2–6× faster** (0.27–0.34 / 3.44–4.02 / 0.39–0.48 s vs 1.72 / 7.07 / 1.56 s) |
 | Symbols indexed vs jCodeMunch (express / fastapi / gin) | 994 / **26,842** / **1,960** vs 1,085 / 13,699 / 1,822 |
-| jCodeMunch's 98 tool names | **all mapped** to a SpecForge tool, command or built-in behaviour, except 3 diagnostics ([table](docs/COMPARISON.md#5-tools-every-jcodemunch-tool-mapped)) |
+| jCodeMunch's 98 tool names | **every one has an implemented equivalent** ([table](docs/COMPARISON.md#5-tools-every-jcodemunch-tool-mapped)), plus SpecForge-only tools |
+| Tool schema per turn vs jCodeMunch | default **~790** vs ~1,050 tokens (6 tools each); everything **~7,870** vs ~28,142 |
 | Starter packs | **51** curated (npm / PyPI / Go / GitHub), fetched from the registry, **no install needed** |
 | Paraphrased tasks in `get_context` with local embeddings | **8/12** found (3/12 keyword-only) |
 | Token savings, 13 typical lookups on [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) | **84% fewer tokens** than reading the files |
@@ -105,6 +106,10 @@ Agents burn most of their tokens reading whole files to find one function. `spec
 | `render_diagram`, `audit_agent_config`, `runtime_coverage` | Mermaid call/class/deps/modules/sequence/tectonic, wasted tokens in CLAUDE.md/skills/MCP config, hot and never-executed code from lcov/Cobertura/JaCoCo |
 | `plan_turn`, `suggest_queries`, `session_snapshot`, `tool_stats`, `redaction_log`, `index_status` | budgeted first-turn plan, starter queries, what's already in context (survives compaction), per-tool latency, what was redacted, freshness + embedding-model drift |
 | `file_tree`, `get_file_content`, `list_workspaces`, `cross_repo_map`, `list_packs`, `add_pack` | navigation, line-range reads, other indexed repos and their links, starter packs |
+| `import_runtime_trace`, `runtime_hot_paths`, `runtime_unused` | OpenTelemetry traces (OTLP JSON / JSONL / gzip) mapped to symbols by code attributes, HTTP route or name: hits and p50 / p95 latency per symbol, code never executed in real traffic; latency also feeds `file_risk` |
+| `suggest_corrections`, `tune_weights` | why searches miss (mined from the local query → fetch ledger) with synonym rules you can apply; fusion-weight tuning on an eval file or the ledger |
+| `group_contracts`, `finalize_handoff` | APIs shared across repos with their consumers (the breaking-change surface); one validated Markdown handoff whose code references are checked against the index |
+| `set_tool_tier`, `run_tool` | switch tool sets mid-session (sends `tools/list_changed`; a model id picks a tier), or call any tool by name |
 
 Besides code, the index holds **config keys** (`jobs.build.runs-on`, `scripts.test`, `services.db.image`; `.env` values are never stored) and **documentation sections** (Markdown / RST / AsciiDoc headings, fetchable one section at a time). Both rank below code unless the query asks for docs.
 
@@ -120,7 +125,7 @@ specforge pack export npm:react -o react.sfpack   # share a pack offline; `specf
 ```
 Archives are extracted with path-traversal, absolute-path and size checks; packs are registered as sources, so every core tool accepts `source="npm:react"`.
 
-Tool tiers keep the per-turn schema small: `core` (9 tools, ~1.4k tokens), `standard` (29, ~3.5k), `analysis` (56, ~6.4k), `full` (83, ~9.0k; jCodeMunch's full surface is ~28k). Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
+Tool tiers keep the per-turn schema small. The default `lite` tier is 6 tools (~790 tokens: `repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`); then `core` (11, ~1.2k), `standard` (32, ~3.0k), `analysis` (62, ~5.4k), `full` (92, ~7.9k; jCodeMunch's full surface is ~28k). Agents switch with `set_tool_tier` when a task needs more, or call a single tool with `run_tool`. Pin a tier with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`. Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
 
 ## Your profile: models per role
 
@@ -175,6 +180,7 @@ specforge watch [--embed]
 specforge pack list | add <name|npm:x|pypi:x|go:x|gh:o/r>[@ver] | export <source> -o x.sfpack | import x.sfpack
 specforge insight health|untested|similar|complexity|extract|entry|chains|tectonic|architecture|decorators|flow|
                   columns|safety|endpoint|risk-file|provenance|diff|digest|delivery|churn|audit [target]
+specforge insight trace-import <otel.json[.gz]> | hot | unused | corrections [--apply] | tune [eval.json] [--apply] | contracts
 specforge diagram call|class|deps|modules|sequence|tectonic [target] [-o diagram.html|.md]
 specforge connect                 # list the connector catalog
 specforge connect jira figma      # add connectors to .mcp.json  (--remove to drop)
@@ -207,6 +213,7 @@ pip install -e . && pytest -q
 python tests/mcp_smoke.py /path/to/repo     # exercises the core MCP tools over stdio
 python tests/mcp_new_tools.py /path/to/repo # test, backfill and profile tools
 python tests/mcp_v05_tools.py /path/to/repo # every analysis/history/session tool, fails on any tool error
+python tests/mcp_v06_tools.py /path/to/repo # lite default, live tier switching, OTel, regret, contracts, handoff
 python tests/evals/run_context_eval.py <repo> tests/evals/context_fullstack_fastapi.json
 ```
 

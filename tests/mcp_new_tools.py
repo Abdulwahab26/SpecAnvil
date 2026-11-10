@@ -1,9 +1,13 @@
-import asyncio, sys
+import asyncio
+import os
+import sys
+
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+
 async def main(root):
-    async with stdio_client(StdioServerParameters(command="specforge-mcp", args=[], cwd=root)) as (r, w):
+    async with stdio_client(StdioServerParameters(command="specforge-mcp", args=[], cwd=root, env={**os.environ, "SPECFORGE_TOOLS": "full"})) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()
             names = [t.name for t in (await s.list_tools()).tools]
