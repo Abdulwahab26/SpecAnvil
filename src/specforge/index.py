@@ -1,0 +1,472 @@
+"""SQLite-backed code index: incremental, FTS5 ranked search, token ledger."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import sqlite3
+import subprocess
+import time
+from collections import Counter, defaultdict
+from pathlib import Path
+
+from .config import INDEX_FILE, load_config, state_dir
+from .parser import parse_source
+from .scanner import is_secret, iter_files
+from .tokens import estimate_tokens, redact
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS files(
+  path TEXT PRIMARY KEY, lang TEXT, hash TEXT, size INT, lines INT, tokens INT,
+  parser TEXT, module TEXT, indexed_at REAL);
+CREATE TABLE IF NOT EXISTS symbols(
+  id INTEGER PRIMARY KEY, path TEXT, name TEXT, qualname TEXT, kind TEXT, signature TEXT,
+  start_line INT, end_line INT, doc TEXT, parent TEXT, exported INT, body_hash TEXT, tokens INT);
+CREATE INDEX IF NOT EXISTS ix_sym_path ON symbols(path);
+CREATE INDEX IF NOT EXISTS ix_sym_name ON symbols(name);
+CREATE TABLE IF NOT EXISTS imports(path TEXT, source TEXT);
+CREATE INDEX IF NOT EXISTS ix_imp_path ON imports(path);
+CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, terms, signature, doc, path,
+  tokenize='unicode61');
+CREATE TABLE IF NOT EXISTS ledger(ts REAL, tool TEXT, returned INT, baseline INT);
+CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
+"""
+
+STOPWORDS = set("""a an the and or of to in on for with from by is are be as at this that it into
+add new make create update fix implement build feature should when then so we our use using need
+able allow page screen show get set have has can will would there their them user users""".split())
+STOPWORDS -= {"user", "users", "get", "set"}  # domain words worth keeping
+STOPWORDS |= {"please", "want", "like", "also", "via"}
+
+_CAMEL = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+GENERIC_ROOTS = {"src", "app", "lib", "source", "main", "java", "kotlin", "scala", "pkg",
+                 "internal", "cmd", "code", "srcs"}
+APP_ROOTS = {"frontend", "backend", "web", "webapp", "client", "server", "api", "ui", "mobile", "admin"}
+MONO_ROOTS = {"packages", "apps", "services", "libs", "modules", "projects", "components"}
+
+
+def split_terms(*texts: str) -> str:
+    out = []
+    for t in texts:
+        for w in re.split(r"[^A-Za-z0-9]+", t or ""):
+            out.extend(p.lower() for p in _CAMEL.findall(w))
+    return " ".join(dict.fromkeys(out))
+
+
+# Task words -> how code usually names them. Helps natural-language tasks find the right symbols.
+SYNONYMS = {
+    "endpoint": ["route", "router", "api", "controller", "handler", "view"],
+    "api": ["route", "controller", "handler", "endpoint"],
+    "list": ["read", "get", "all", "index", "find", "fetch"],
+    "pagin": ["skip", "limit", "offset", "cursor", "page"],
+    "page": ["skip", "limit", "offset", "cursor"],
+    "creat": ["add", "new", "insert", "post", "save"],
+    "delet": ["remove", "destroy", "drop"],
+    "remov": ["delete", "destroy"],
+    "updat": ["edit", "patch", "put", "save"],
+    "edit": ["update", "patch"],
+    "login": ["auth", "signin", "authenticate", "session", "token"],
+    "auth": ["login", "authenticate", "permission", "token", "session"],
+    "signup": ["register", "create"],
+    "regist": ["signup", "create"],
+    "email": ["mail", "send"],
+    "search": ["find", "query", "filter"],
+    "filter": ["query", "where", "search"],
+    "upload": ["file", "storage", "multipart"],
+    "permiss": ["role", "authorize", "access", "policy"],
+    "validat": ["check", "verify", "schema"],
+}
+
+
+def stem(w: str) -> str:
+    """Tiny suffix stripper so tokens~token, expired~expiry~expire share a prefix."""
+    for suf in ("ations", "ation", "ings", "ing", "ies", "ers", "ed", "es", "er", "s", "y", "e"):
+        if len(w) - len(suf) >= 4 and w.endswith(suf):
+            return w[: -len(suf)]
+    return w
+
+
+GENERATED_RX = re.compile(r"(\.gen\.|\.generated\.|/generated/|__generated__|\.pb\.|_pb2\.|/migrations?/versions/|"
+                          r"\.d\.ts$|/client/(types|sdk|schemas)\.|openapi)", re.I)
+TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec|e2e)(/|$)|[._](test|spec)\.[a-z]+$|(^|/)test_[^/]+$|Tests?\.\w+$")
+
+
+def module_of(path: str) -> str:
+    parts = path.split("/")[:-1]
+    if not parts:
+        return "(root)"
+    prefix: list[str] = []
+    if parts[0] in MONO_ROOTS and len(parts) > 1:
+        prefix, parts = parts[:2], parts[2:]
+    elif parts[0].lower() in APP_ROOTS and len(parts) > 1:
+        prefix, parts = parts[:1], parts[1:]
+    while parts and parts[0].lower() in GENERIC_ROOTS:
+        parts = parts[1:]
+    if parts and parts[0] in ("com", "org", "net", "io", "dev", "co", "de", "uk"):
+        parts = parts[3:] if len(parts) > 3 else parts[-1:]
+    mod = prefix + parts[:1]
+    if prefix and parts[:1] and parts[0] == prefix[-1]:
+        mod = prefix
+    return "/".join(mod) if mod else ("/".join(prefix) or path.split("/")[0])
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha1(data).hexdigest()
+
+
+class CodeIndex:
+    def __init__(self, root: Path | str):
+        self.root = Path(root).resolve()
+        d = state_dir(self.root)
+        d.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(d / INDEX_FILE, check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript(SCHEMA)
+        self.cfg = load_config(self.root)
+
+    # ------------------------------------------------------------------ build
+    def is_built(self) -> bool:
+        return self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] > 0
+
+    def build(self, full: bool = False, only: list[str] | None = None) -> dict:
+        t0 = time.time()
+        from .parser import PARSER_VERSION
+        row = self.db.execute("SELECT value FROM meta WHERE key='parser_version'").fetchone()
+        if not row or row[0] != PARSER_VERSION:
+            full, only = True, None
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
+        rows = self.db.execute("SELECT path, hash, size, indexed_at FROM files").fetchall()
+        known = {r["path"]: r["hash"] for r in rows}
+        stamp = {r["path"]: (r["size"], r["indexed_at"]) for r in rows}
+        if only is not None:
+            paths = [p for p in only if (self.root / p).is_file() and not is_secret(p)]
+            removed = [p for p in only if p in known and not (self.root / p).is_file()]
+        else:
+            paths = iter_files(self.root)
+            removed = [p for p in known if p not in set(paths)]
+        changed = parsed_ts = 0
+        for rel in paths:
+            if not full and rel in stamp:
+                try:
+                    st = (self.root / rel).stat()
+                    if st.st_size == stamp[rel][0] and st.st_mtime < stamp[rel][1]:
+                        continue  # unchanged since last index: skip without reading
+                except OSError:
+                    continue
+            try:
+                data = (self.root / rel).read_bytes()
+            except OSError:
+                continue
+            h = _sha(data)
+            if not full and known.get(rel) == h:
+                self.db.execute("UPDATE files SET indexed_at=? WHERE path=?", (time.time(), rel))
+                continue
+            self._index_file(rel, data, h)
+            changed += 1
+        for rel in removed:
+            self._delete_file(rel)
+        self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
+        self.db.commit()
+        parsed_ts = self.db.execute("SELECT COUNT(*) FROM files WHERE parser='tree-sitter'").fetchone()[0]
+        return {"files_changed": changed, "files_removed": len(removed),
+                "files_total": self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0],
+                "symbols_total": self.db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0],
+                "tree_sitter_files": parsed_ts, "seconds": round(time.time() - t0, 2)}
+
+    def _delete_file(self, rel: str) -> None:
+        ids = [r[0] for r in self.db.execute("SELECT id FROM symbols WHERE path=?", (rel,))]
+        if ids:
+            self.db.executemany("DELETE FROM symbols_fts WHERE rowid=?", [(i,) for i in ids])
+        self.db.execute("DELETE FROM symbols WHERE path=?", (rel,))
+        self.db.execute("DELETE FROM imports WHERE path=?", (rel,))
+        self.db.execute("DELETE FROM files WHERE path=?", (rel,))
+
+    def _index_file(self, rel: str, data: bytes, h: str) -> None:
+        self._delete_file(rel)
+        text = data.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        fp = parse_source(rel, text)
+        self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?)",
+                        (rel, fp.language, h, len(data), len(lines), estimate_tokens(text),
+                         fp.parser, module_of(rel), time.time()))
+        for s in fp.symbols:
+            body = "\n".join(lines[s.start_line - 1:s.end_line])
+            cur = self.db.execute(
+                "INSERT INTO symbols(path,name,qualname,kind,signature,start_line,end_line,doc,parent,"
+                "exported,body_hash,tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (rel, s.name, s.qualname, s.kind, s.signature, s.start_line, s.end_line, s.doc,
+                 s.parent, int(s.exported), _sha(body.encode()), estimate_tokens(body)))
+            self.db.execute("INSERT INTO symbols_fts(rowid,name,terms,signature,doc,path) VALUES(?,?,?,?,?,?)",
+                            (cur.lastrowid, s.name, split_terms(s.qualname, rel), s.signature, s.doc,
+                             split_terms(rel)))
+        self.db.executemany("INSERT INTO imports VALUES(?,?)", [(rel, i) for i in fp.imports])
+
+    # ----------------------------------------------------------------- ledger
+    def record(self, tool: str, returned_text: str, baseline_tokens: int) -> None:
+        returned = estimate_tokens(returned_text)
+        self.db.execute("INSERT INTO ledger VALUES(?,?,?,?)",
+                        (time.time(), tool, returned, max(baseline_tokens, returned)))
+        self.db.commit()
+
+    def savings(self) -> dict:
+        rows = self.db.execute("SELECT tool, COUNT(*) n, SUM(returned) r, SUM(baseline) b "
+                               "FROM ledger GROUP BY tool ORDER BY b DESC").fetchall()
+        per = [{"tool": r["tool"], "calls": r["n"], "returned_tokens": r["r"], "baseline_tokens": r["b"],
+                "saved_pct": round(100 * (1 - r["r"] / r["b"]), 1) if r["b"] else 0} for r in rows]
+        tr = sum(p["returned_tokens"] for p in per)
+        tb = sum(p["baseline_tokens"] for p in per)
+        return {"calls": sum(p["calls"] for p in per), "returned_tokens": tr, "baseline_tokens": tb,
+                "saved_tokens": tb - tr, "saved_pct": round(100 * (1 - tr / tb), 1) if tb else 0,
+                "by_tool": per,
+                "note": "baseline = tokens of the whole files the model would otherwise have read (≈4 chars/token)"}
+
+    # ---------------------------------------------------------------- queries
+    def file_tokens(self, paths) -> int:
+        paths = list(set(paths))
+        if not paths:
+            return 0
+        q = ",".join("?" * len(paths))
+        return self.db.execute(f"SELECT COALESCE(SUM(tokens),0) FROM files WHERE path IN ({q})",
+                               paths).fetchone()[0]
+
+    def stats(self) -> dict:
+        langs = self.db.execute("SELECT lang, COUNT(*) n, SUM(lines) l FROM files GROUP BY lang "
+                                "ORDER BY l DESC").fetchall()
+        kinds = self.db.execute("SELECT kind, COUNT(*) n FROM symbols GROUP BY kind ORDER BY n DESC").fetchall()
+        tot = self.db.execute("SELECT COUNT(*), COALESCE(SUM(lines),0), COALESCE(SUM(tokens),0) FROM files").fetchone()
+        return {"files": tot[0], "lines": tot[1], "repo_tokens": tot[2],
+                "symbols": self.db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0],
+                "languages": [{"lang": r["lang"], "files": r["n"], "lines": r["l"]} for r in langs],
+                "symbol_kinds": {r["kind"]: r["n"] for r in kinds}}
+
+    def modules(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT f.module m, COUNT(DISTINCT f.path) files, SUM(f.lines) lines, "
+            "(SELECT COUNT(*) FROM symbols s JOIN files f2 ON s.path=f2.path WHERE f2.module=f.module) syms "
+            "FROM files f WHERE f.parser != 'text' GROUP BY f.module ORDER BY lines DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def module_files(self, module: str) -> list[str]:
+        return [r[0] for r in self.db.execute(
+            "SELECT path FROM files WHERE module=? AND parser!='text' ORDER BY path", (module,))]
+
+    def outline(self, path: str, include_private: bool = True) -> dict | None:
+        f = self.db.execute("SELECT * FROM files WHERE path=?", (path,)).fetchone()
+        if not f:
+            return None
+        syms = self.db.execute("SELECT id,name,qualname,kind,signature,start_line,end_line,doc,parent,exported "
+                               "FROM symbols WHERE path=? ORDER BY start_line", (path,)).fetchall()
+        items = []
+        for s in syms:
+            if not include_private and s["name"].startswith("_"):
+                continue
+            depth = s["qualname"].count(".")
+            items.append(f"{'  ' * depth}[{s['id']}] {s['kind']} {s['signature']}  "
+                         f"(L{s['start_line']}-{s['end_line']})" + (f"  # {s['doc']}" if s["doc"] else ""))
+        imps = [r[0] for r in self.db.execute("SELECT source FROM imports WHERE path=? LIMIT 40", (path,))]
+        return {"path": path, "language": f["lang"], "lines": f["lines"], "file_tokens": f["tokens"],
+                "imports": imps, "symbols": items}
+
+    def search(self, query: str, kind: str | None = None, path_prefix: str | None = None,
+               limit: int = 20) -> list[dict]:
+        terms = list(dict.fromkeys(stem(t) for t in split_terms(query).split() if t))
+        if not terms:
+            return []
+        fts = " OR ".join(f'"{t}"*' for t in terms)
+        sql = ("SELECT s.id,s.path,s.name,s.qualname,s.kind,s.signature,s.start_line,s.end_line,s.doc,s.tokens,"
+               "bm25(symbols_fts, 10.0, 4.0, 2.0, 1.5, 1.0) AS score "
+               "FROM symbols_fts JOIN symbols s ON s.id = symbols_fts.rowid WHERE symbols_fts MATCH ?")
+        args: list = [fts]
+        if kind:
+            sql += " AND s.kind = ?"
+            args.append(kind)
+        if path_prefix:
+            sql += " AND s.path LIKE ?"
+            args.append(path_prefix.rstrip("/") + "%")
+        sql += " ORDER BY score LIMIT ?"
+        args.append(limit * 3)
+        rows = [dict(r) for r in self.db.execute(sql, args)]
+        # exact-name boost
+        ql = query.strip().lower()
+        for r in rows:
+            if r["name"].lower() == ql or r["qualname"].lower() == ql:
+                r["score"] -= 100
+        rows.sort(key=lambda r: r["score"])
+        return rows[:limit]
+
+    def find_symbol(self, ref: str | int, path: str | None = None) -> list[sqlite3.Row]:
+        if isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit()):
+            return self.db.execute("SELECT * FROM symbols WHERE id=?", (int(ref),)).fetchall()
+        if "::" in ref and not path:
+            path, ref = ref.split("::", 1)
+        sql, args = "SELECT * FROM symbols WHERE (qualname=? OR name=?)", [ref, ref]
+        if path:
+            sql += " AND path=?"
+            args.append(path)
+        return self.db.execute(sql + " ORDER BY length(qualname) LIMIT 10", args).fetchall()
+
+    def read_lines(self, path: str, start: int, end: int) -> str:
+        try:
+            lines = (self.root / path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return ""
+        text = "\n".join(lines[max(0, start - 1):end])
+        return redact(text) if self.cfg.get("redact_secrets", True) else text
+
+    def symbol_source(self, row: sqlite3.Row, context_lines: int = 0) -> str:
+        start = max(1, row["start_line"] - context_lines)
+        # include a leading doc comment / decorators if present
+        body = self.read_lines(row["path"], start, row["end_line"] + context_lines)
+        return body
+
+    def overview(self, max_modules: int = 25, per_module: int = 8) -> str:
+        return self.overview_with_files(max_modules, per_module)[0]
+
+    def overview_with_files(self, max_modules: int = 25, per_module: int = 8) -> tuple[str, list[str]]:
+        listed: list[str] = []
+        st = self.stats()
+        out = [f"# Repo map ({st['files']} files, {st['lines']:,} lines, {st['symbols']:,} symbols, "
+               f"~{st['repo_tokens']:,} tokens if read in full)",
+               "Languages: " + ", ".join(f"{l['lang']} ({l['files']})" for l in st["languages"][:10]), ""]
+        for m in self.modules()[:max_modules]:
+            out.append(f"## {m['m']}  — {m['files']} files, {m['lines']:,} lines")
+            top = self.db.execute(
+                "SELECT s.kind, s.qualname, s.path, s.start_line FROM symbols s JOIN files f ON s.path=f.path "
+                "WHERE f.module=? AND s.parent='' AND s.kind IN ('class','interface','struct','enum','trait','function',"
+                "'impl','namespace') ORDER BY s.exported DESC, s.tokens DESC LIMIT ?", (m["m"], per_module)).fetchall()
+            for s in top:
+                out.append(f"- {s['kind']} {s['qualname']}  ({s['path']}:{s['start_line']})")
+                listed.append(s["path"])
+        return "\n".join(out), listed
+
+    def context_for(self, task: str, budget_tokens: int | None = None) -> tuple[str, list[str]]:
+        budget = budget_tokens or int(self.cfg.get("context_budget_tokens", 6000))
+        words = [w for w in split_terms(task).split() if w not in STOPWORDS and len(w) > 2]
+        if not words:
+            return "No meaningful keywords in task.", []
+        stems = list(dict.fromkeys(stem(w) for w in words))
+        extra = list(dict.fromkeys(x for st in stems for k, v in SYNONYMS.items() if st.startswith(k) for x in v))
+        hits = self.search(" ".join(words + extra), limit=100)
+        extra_stems = [stem(x) for x in extra if stem(x) not in stems]
+        wants_tests = any(w.startswith("test") for w in words)
+        file_score = Counter(h["path"] for h in hits)
+
+        def rank(h: dict) -> float:
+            hay = split_terms(h["qualname"], h["signature"], h["doc"] or "", h["path"])
+            hay_words = hay.split()
+            coverage = sum(any(x.startswith(st) for x in hay_words) for st in stems)
+            coverage += 0.5 * min(2, sum(any(x.startswith(st) for x in hay_words) for st in extra_stems))
+            score = -coverage * 10 + h["score"] - 0.5 * min(file_score[h["path"]], 6)
+            if GENERATED_RX.search(h["path"]):
+                score += 25  # generated code: rarely what you edit
+            if TEST_RX.search(h["path"]) and not wants_tests:
+                score += 8
+            if h["kind"] in ("function", "method"):
+                score -= 1
+            return score
+
+        hits.sort(key=rank)
+        out = [f"# Context for: {task}", f"keywords: {', '.join(words)}", ""]
+        used = estimate_tokens("\n".join(out))
+        full_budget = int(budget * 0.7)
+        files: list[str] = []
+        sig_only: list[dict] = []
+        seen_parents: set[tuple[str, str]] = set()
+        per_file: Counter = Counter()
+        for h in hits:
+            key = (h["path"], h["qualname"].rsplit(".", 1)[0])
+            if h["tokens"] and used + h["tokens"] < full_budget and key not in seen_parents \
+                    and per_file[h["path"]] < 3:
+                per_file[h["path"]] += 1
+                body = self.read_lines(h["path"], h["start_line"], h["end_line"])
+                block = f"### {h['qualname']}  [{h['id']}]  {h['path']}:{h['start_line']}-{h['end_line']}\n```\n{body}\n```"
+                used += estimate_tokens(block)
+                out.append(block)
+                files.append(h["path"])
+                if h["kind"] in ("class", "interface", "struct"):
+                    seen_parents.add((h["path"], h["qualname"]))
+            else:
+                sig_only.append(h)
+        if sig_only:
+            out.append("\n### Related (signatures only — fetch with get_symbol if needed)")
+            for h in sig_only:
+                line = f"- [{h['id']}] {h['kind']} {h['signature']}  ({h['path']}:{h['start_line']})"
+                if used + estimate_tokens(line) > budget:
+                    break
+                out.append(line)
+                used += estimate_tokens(line)
+                files.append(h["path"])
+        return "\n".join(out), files
+
+    def grep(self, pattern: str, path_glob: str | None = None, limit: int = 50,
+             regex: bool = False, word: bool = False, code_only: bool = False) -> tuple[list[str], list[str]]:
+        import fnmatch
+        rx = re.compile(pattern if regex else (r"\b" + re.escape(pattern) + r"\b" if word else re.escape(pattern)))
+        out, files = [], []
+        sql = "SELECT path FROM files" + (" WHERE parser != 'text'" if code_only else "") + " ORDER BY path"
+        for (path,) in self.db.execute(sql):
+            if path_glob and not fnmatch.fnmatch(path, path_glob):
+                continue
+            try:
+                lines = (self.root / path).read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            hit = False
+            for i, line in enumerate(lines, 1):
+                if rx.search(line):
+                    out.append(f"{path}:{i}: {redact(line.strip())[:200]}")
+                    hit = True
+                    if len(out) >= limit:
+                        files.append(path)
+                        return out, files
+            if hit:
+                files.append(path)
+        return out, files
+
+    def enclosing_symbol(self, path: str, line: int) -> sqlite3.Row | None:
+        return self.db.execute("SELECT * FROM symbols WHERE path=? AND start_line<=? AND end_line>=? "
+                               "ORDER BY (end_line-start_line) LIMIT 1", (path, line, line)).fetchone()
+
+    def changed_symbols(self, base: str = "HEAD") -> list[dict]:
+        try:
+            diff = subprocess.run(["git", "diff", "--unified=0", base, "--"], cwd=self.root,
+                                  capture_output=True, text=True, timeout=60).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+        result: dict[tuple, dict] = {}
+        current = None
+        for line in diff.splitlines():
+            if line.startswith("+++ "):
+                current = line[6:] if line.startswith("+++ b/") else None
+            elif line.startswith("@@") and current:
+                m = re.search(r"\+(\d+)(?:,(\d+))?", line)
+                if not m:
+                    continue
+                start, count = int(m.group(1)), int(m.group(2) or 1)
+                for ln in range(start, start + max(count, 1)):
+                    s = self.enclosing_symbol(current, ln)
+                    key = (current, s["qualname"] if s else "(module level)")
+                    result.setdefault(key, {"path": current, "symbol": key[1],
+                                            "id": s["id"] if s else None,
+                                            "signature": s["signature"] if s else ""})
+        return list(result.values())
+
+    def dependents(self, path: str) -> list[str]:
+        """Files whose imports mention this file's module/stem (cheap reverse-dependency guess)."""
+        stem = Path(path).stem
+        if stem in ("index", "__init__", "main", "mod"):
+            stem = Path(path).parent.name
+        rows = self.db.execute("SELECT DISTINCT path FROM imports WHERE source LIKE ? AND path != ?",
+                               (f"%{stem}%", path)).fetchall()
+        return [r[0] for r in rows]
+
+    def to_json(self) -> str:
+        return json.dumps(self.stats(), indent=2)
+
+
+def group_by(rows, key):
+    d = defaultdict(list)
+    for r in rows:
+        d[r[key]].append(r)
+    return d
