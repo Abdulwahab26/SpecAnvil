@@ -1,37 +1,57 @@
-"""SQLite-backed code index: incremental, FTS5 ranked search, token ledger."""
+"""SQLite-backed code index: incremental, FTS5 ranked search, token ledger.
+
+Pipeline: scan (git ls-files + one stat per file) -> diff against stored (size, mtime_ns)
+fingerprints -> read + hash only changed files -> parse in a process pool when there is
+enough work -> write everything in one transaction with executemany.
+Everything runs on the local machine; nothing here touches the network.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import subprocess
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import asdict
 from pathlib import Path
 
 from .config import INDEX_FILE, load_config, state_dir
-from .parser import parse_source
-from .scanner import is_secret, iter_files
+from .parser import FileParse, Symbol, parse_source
+from .scanner import Candidate, is_secret, iter_candidates, looks_binary
 from .tokens import estimate_tokens, redact
 
+SCHEMA_VERSION = "2"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files(
-  path TEXT PRIMARY KEY, lang TEXT, hash TEXT, size INT, lines INT, tokens INT,
+  path TEXT PRIMARY KEY, lang TEXT, hash TEXT, size INT, mtime_ns INT, lines INT, tokens INT,
   parser TEXT, module TEXT, indexed_at REAL);
+CREATE INDEX IF NOT EXISTS ix_files_module ON files(module);
 CREATE TABLE IF NOT EXISTS symbols(
   id INTEGER PRIMARY KEY, path TEXT, name TEXT, qualname TEXT, kind TEXT, signature TEXT,
   start_line INT, end_line INT, doc TEXT, parent TEXT, exported INT, body_hash TEXT, tokens INT);
-CREATE INDEX IF NOT EXISTS ix_sym_path ON symbols(path);
+CREATE INDEX IF NOT EXISTS ix_sym_path ON symbols(path, start_line);
 CREATE INDEX IF NOT EXISTS ix_sym_name ON symbols(name);
+CREATE INDEX IF NOT EXISTS ix_sym_qual ON symbols(qualname);
 CREATE TABLE IF NOT EXISTS imports(path TEXT, source TEXT);
 CREATE INDEX IF NOT EXISTS ix_imp_path ON imports(path);
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, terms, signature, doc, path,
-  tokenize='unicode61');
+  tokenize='unicode61', prefix='2 3 4');
 CREATE TABLE IF NOT EXISTS ledger(ts REAL, tool TEXT, returned INT, baseline INT);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
+DATA_TABLES = ("files", "symbols", "imports", "symbols_fts")
+PARALLEL_THRESHOLD = 150  # below this, process start-up costs more than it saves
+
+
+def _parse_job(item: tuple[str, str]) -> tuple[str, dict]:
+    rel, text = item
+    return rel, asdict(parse_source(rel, text))
+
 
 STOPWORDS = set("""a an the and or of to in on for with from by is are be as at this that it into
 add new make create update fix implement build feature should when then so we our use using need
@@ -111,8 +131,9 @@ def module_of(path: str) -> str:
     return "/".join(mod) if mod else ("/".join(prefix) or path.split("/")[0])
 
 
-def _sha(data: bytes) -> str:
-    return hashlib.sha1(data).hexdigest()
+def _from_dict(d: dict) -> FileParse:
+    return FileParse(language=d["language"], parser=d["parser"],
+                     symbols=[Symbol(**x) for x in d["symbols"]], imports=d["imports"])
 
 
 class CodeIndex:
@@ -122,85 +143,146 @@ class CodeIndex:
         d.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(d / INDEX_FILE, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
+        for pragma in ("journal_mode=WAL", "synchronous=NORMAL", "temp_store=MEMORY",
+                       "mmap_size=268435456", "cache_size=-65536"):
+            self.db.execute(f"PRAGMA {pragma}")
+        self.db.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
+        row = self.db.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        if not row or row[0] != SCHEMA_VERSION:  # schema changed: rebuild data tables, keep ledger
+            for t in DATA_TABLES:
+                self.db.execute(f"DROP TABLE IF EXISTS {t}")
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES('schema_version', ?)", (SCHEMA_VERSION,))
+            self.db.execute("DELETE FROM meta WHERE key='parser_version'")
         self.db.executescript(SCHEMA)
+        self.db.commit()
         self.cfg = load_config(self.root)
 
     # ------------------------------------------------------------------ build
     def is_built(self) -> bool:
         return self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0] > 0
 
-    def build(self, full: bool = False, only: list[str] | None = None) -> dict:
+    def build(self, full: bool = False, only: list[str] | None = None, workers: int | None = None) -> dict:
         t0 = time.time()
         from .parser import PARSER_VERSION
         row = self.db.execute("SELECT value FROM meta WHERE key='parser_version'").fetchone()
         if not row or row[0] != PARSER_VERSION:
             full, only = True, None
-            self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
-        rows = self.db.execute("SELECT path, hash, size, indexed_at FROM files").fetchall()
-        known = {r["path"]: r["hash"] for r in rows}
-        stamp = {r["path"]: (r["size"], r["indexed_at"]) for r in rows}
+        stored = {r["path"]: (r["size"], r["mtime_ns"], r["hash"])
+                  for r in self.db.execute("SELECT path, size, mtime_ns, hash FROM files")}
+
+        # 1. scan
         if only is not None:
-            paths = [p for p in only if (self.root / p).is_file() and not is_secret(p)]
-            removed = [p for p in only if p in known and not (self.root / p).is_file()]
-        else:
-            paths = iter_files(self.root)
-            removed = [p for p in known if p not in set(paths)]
-        changed = parsed_ts = 0
-        for rel in paths:
-            if not full and rel in stamp:
+            cands = []
+            for rel in only:
                 try:
-                    st = (self.root / rel).stat()
-                    if st.st_size == stamp[rel][0] and st.st_mtime < stamp[rel][1]:
-                        continue  # unchanged since last index: skip without reading
+                    st = os.stat(self.root / rel)
                 except OSError:
                     continue
+                if not is_secret(rel):
+                    cands.append(Candidate(rel, st.st_size, st.st_mtime_ns))
+            present = {c.path for c in cands}
+            removed = [p for p in only if p in stored and p not in present]
+        else:
+            cands = iter_candidates(self.root)
+            present = {c.path for c in cands}
+            removed = [p for p in stored if p not in present]
+        t_scan = time.time()
+
+        # 2. diff by fingerprint, read + hash only what changed
+        to_parse: list[tuple[str, str]] = []
+        meta: dict[str, tuple] = {}
+        touched: list[tuple] = []
+        for c in cands:
+            old = stored.get(c.path)
+            if not full and old and old[0] == c.size and old[1] == c.mtime_ns:
+                continue
             try:
-                data = (self.root / rel).read_bytes()
+                data = (self.root / c.path).read_bytes()
             except OSError:
                 continue
-            h = _sha(data)
-            if not full and known.get(rel) == h:
-                self.db.execute("UPDATE files SET indexed_at=? WHERE path=?", (time.time(), rel))
+            if looks_binary(data):
+                if old:
+                    removed.append(c.path)
                 continue
-            self._index_file(rel, data, h)
-            changed += 1
-        for rel in removed:
-            self._delete_file(rel)
-        self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
-        self.db.commit()
-        parsed_ts = self.db.execute("SELECT COUNT(*) FROM files WHERE parser='tree-sitter'").fetchone()[0]
-        return {"files_changed": changed, "files_removed": len(removed),
+            h = hashlib.blake2b(data, digest_size=16).hexdigest()
+            if not full and old and old[2] == h:  # touched but identical: just refresh fingerprint
+                touched.append((c.size, c.mtime_ns, c.path))
+                continue
+            text = data.decode("utf-8", errors="replace")
+            to_parse.append((c.path, text))
+            meta[c.path] = (h, c.size, c.mtime_ns)
+
+        # 3. parse (parallel when worthwhile)
+        n_workers = workers if workers is not None else min(8, os.cpu_count() or 1)
+        if len(to_parse) >= PARALLEL_THRESHOLD and n_workers > 1:
+            with ProcessPoolExecutor(max_workers=n_workers) as pool:
+                parsed = list(pool.map(_parse_job, to_parse, chunksize=32))
+            parsed = [(rel, _from_dict(d)) for rel, d in parsed]
+        else:
+            parsed = [(rel, parse_source(rel, text)) for rel, text in to_parse]
+        t_parse = time.time()
+
+        # 4. write in one transaction
+        texts = dict(to_parse)
+        with self.db:
+            for rel in removed:
+                self._delete_file(rel)
+            self.db.executemany("UPDATE files SET size=?, mtime_ns=? WHERE path=?", touched)
+            for rel, fp in parsed:
+                self._write_file(rel, texts[rel], fp, *meta[rel])
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
+        ts_files = self.db.execute("SELECT COUNT(*) FROM files WHERE parser='tree-sitter'").fetchone()[0]
+        return {"files_changed": len(parsed), "files_removed": len(removed),
                 "files_total": self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0],
                 "symbols_total": self.db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0],
-                "tree_sitter_files": parsed_ts, "seconds": round(time.time() - t0, 2)}
+                "tree_sitter_files": ts_files, "seconds": round(time.time() - t0, 2),
+                "timings": {"scan": round(t_scan - t0, 3), "parse": round(t_parse - t_scan, 3),
+                            "write": round(time.time() - t_parse, 3)},
+                "parallel_workers": n_workers if len(to_parse) >= PARALLEL_THRESHOLD and n_workers > 1 else 1}
+
+    def reparse_languages(self, langs: list[str]) -> dict:
+        """After grammars are fetched, re-parse files of those languages that used the regex fallback."""
+        if not langs:
+            return {"files_changed": 0}
+        q = ",".join("?" * len(langs))
+        self.db.execute(f"UPDATE files SET mtime_ns=0 WHERE parser!='tree-sitter' AND lang IN ({q})", langs)
+        self.db.commit()
+        return self.build()
+
+    def code_languages(self) -> list[str]:
+        from .parser import CODE_LANGUAGES
+        rows = self.db.execute("SELECT lang, COUNT(*) n FROM files GROUP BY lang ORDER BY n DESC").fetchall()
+        return [r["lang"] for r in rows if r["lang"] in CODE_LANGUAGES]
 
     def _delete_file(self, rel: str) -> None:
-        ids = [r[0] for r in self.db.execute("SELECT id FROM symbols WHERE path=?", (rel,))]
-        if ids:
-            self.db.executemany("DELETE FROM symbols_fts WHERE rowid=?", [(i,) for i in ids])
+        self.db.execute("DELETE FROM symbols_fts WHERE rowid IN (SELECT id FROM symbols WHERE path=?)", (rel,))
         self.db.execute("DELETE FROM symbols WHERE path=?", (rel,))
         self.db.execute("DELETE FROM imports WHERE path=?", (rel,))
         self.db.execute("DELETE FROM files WHERE path=?", (rel,))
 
-    def _index_file(self, rel: str, data: bytes, h: str) -> None:
+    def _write_file(self, rel: str, text: str, fp: FileParse, h: str, size: int, mtime_ns: int) -> None:
         self._delete_file(rel)
-        text = data.decode("utf-8", errors="replace")
         lines = text.splitlines()
-        fp = parse_source(rel, text)
-        self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?)",
-                        (rel, fp.language, h, len(data), len(lines), estimate_tokens(text),
+        self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (rel, fp.language, h, size, mtime_ns, len(lines), estimate_tokens(text),
                          fp.parser, module_of(rel), time.time()))
-        for s in fp.symbols:
-            body = "\n".join(lines[s.start_line - 1:s.end_line])
-            cur = self.db.execute(
-                "INSERT INTO symbols(path,name,qualname,kind,signature,start_line,end_line,doc,parent,"
-                "exported,body_hash,tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (rel, s.name, s.qualname, s.kind, s.signature, s.start_line, s.end_line, s.doc,
-                 s.parent, int(s.exported), _sha(body.encode()), estimate_tokens(body)))
-            self.db.execute("INSERT INTO symbols_fts(rowid,name,terms,signature,doc,path) VALUES(?,?,?,?,?,?)",
-                            (cur.lastrowid, s.name, split_terms(s.qualname, rel), s.signature, s.doc,
-                             split_terms(rel)))
-        self.db.executemany("INSERT INTO imports VALUES(?,?)", [(rel, i) for i in fp.imports])
+        if fp.symbols:
+            base = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM symbols").fetchone()[0]
+            sym_rows, fts_rows = [], []
+            rel_terms = split_terms(rel)
+            for i, s in enumerate(fp.symbols, start=1):
+                body = "\n".join(lines[s.start_line - 1:s.end_line])
+                sid = base + i
+                sym_rows.append((sid, rel, s.name, s.qualname, s.kind, s.signature, s.start_line, s.end_line,
+                                 s.doc, s.parent, int(s.exported),
+                                 hashlib.blake2b(body.encode(), digest_size=12).hexdigest(), estimate_tokens(body)))
+                fts_rows.append((sid, s.name, split_terms(s.qualname, rel), s.signature, s.doc, rel_terms))
+            self.db.executemany("INSERT INTO symbols VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", sym_rows)
+            self.db.executemany("INSERT INTO symbols_fts(rowid,name,terms,signature,doc,path) VALUES(?,?,?,?,?,?)",
+                                fts_rows)
+        if fp.imports:
+            self.db.executemany("INSERT INTO imports VALUES(?,?)", [(rel, i) for i in fp.imports])
 
     # ----------------------------------------------------------------- ledger
     def record(self, tool: str, returned_text: str, baseline_tokens: int) -> None:
@@ -405,7 +487,11 @@ class CodeIndex:
         rx = re.compile(pattern if regex else (r"\b" + re.escape(pattern) + r"\b" if word else re.escape(pattern)))
         out, files = [], []
         sql = "SELECT path FROM files" + (" WHERE parser != 'text'" if code_only else "") + " ORDER BY path"
-        for (path,) in self.db.execute(sql):
+        allowed = [r[0] for r in self.db.execute(sql)]
+        fast = self._rg(rx.pattern, set(allowed), path_glob, limit)
+        if fast is not None:
+            return fast
+        for path in allowed:
             if path_glob and not fnmatch.fnmatch(path, path_glob):
                 continue
             try:
@@ -422,6 +508,43 @@ class CodeIndex:
                         return out, files
             if hit:
                 files.append(path)
+        return out, files
+
+    def _rg(self, pattern: str, allowed: set[str], path_glob: str | None, limit: int):
+        """ripgrep fast path (if installed). Results are filtered to indexed files, so ignored and
+        secret files can never leak through, exactly like the pure-Python path."""
+        import shutil
+        rg = shutil.which("rg")
+        if not rg or os.environ.get("SPECFORGE_NO_RG"):
+            return None
+        cmd = [rg, "--line-number", "--no-heading", "--color", "never", "--max-columns", "300", "-e", pattern]
+        if path_glob:
+            cmd += ["--glob", path_glob]
+        cmd += ["--", "."]
+        out, files = [], []
+        try:
+            proc = subprocess.Popen(cmd, cwd=self.root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True,
+                                    encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            path, _, rest = line.partition(":")
+            path = path[2:] if path.startswith("./") else path
+            lineno, _, text = rest.partition(":")
+            if path not in allowed or not lineno.isdigit():
+                continue
+            out.append(f"{path}:{lineno}: {redact(text.strip())[:200]}")
+            if not files or files[-1] != path:
+                files.append(path)
+            if len(out) >= limit:
+                break
+        if len(out) >= limit:
+            proc.kill()
+        code = proc.wait()
+        if code == 2 and not out:  # rg rejected the pattern (Python/Rust regex dialects differ): fall back
+            return None
         return out, files
 
     def enclosing_symbol(self, path: str, line: int) -> sqlite3.Row | None:

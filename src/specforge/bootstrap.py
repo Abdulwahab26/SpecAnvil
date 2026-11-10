@@ -23,7 +23,7 @@ from .specs import lock_specs
 MARK_START = "<!-- specforge:start -->"
 MARK_END = "<!-- specforge:end -->"
 COMMANDS = ["groom", "design", "plan", "fe", "be", "db", "qa", "e2e", "verify", "flow", "ship", "status",
-            "learn", "spec"]
+            "learn", "spec", "test-plan", "test-run", "backfill", "profile"]
 
 
 def asset(path: str) -> str:
@@ -263,6 +263,8 @@ def _claude_md_block(values: dict, stack: dict) -> str:
 Specs in `{values['specs_dir']}/` are the source of truth: `project.md`, `conventions.md`, `modules/`, `features/<ID>/`.
 Workflow: `/sf:groom` → `/sf:design` → `/sf:plan` → `/sf:be` + `/sf:fe` → `/sf:db` → `/sf:qa` → `/sf:e2e` → `/sf:verify` → `/sf:ship`
 (or `/sf:flow <ticket>` to run the agent team end to end; `/sf:spec` for small changes; `/sf:status` for the board).
+Unit tests: `/sf:test-plan <module>` (planner model) → `/sf:test-run <module>` (executor model). History: `/sf:backfill`.
+Models per role live in your personal profile: `/sf:profile` or `specforge profile set models.<role> <model>`.
 
 ### Code navigation (saves tokens)
 Use the **specforge** MCP before reading files: `repo_map`, `get_context(task)`, `search_symbols`, `file_outline`,
@@ -278,6 +280,43 @@ Use the **specforge** MCP before reading files: `repo_map`, `get_context(task)`,
 - Never commit secrets; never write to shared databases or tickets without asking.
 {MARK_END}
 """
+
+
+def _with_model(content: str, model: str | None) -> str:
+    """Insert/replace the `model:` field in an agent's YAML frontmatter (Claude Code subagent format)."""
+    head, sep, body = content.partition("\n---\n")
+    lines = [ln for ln in head.splitlines() if not ln.startswith("model:")]
+    if model:
+        lines.append(f"model: {model}")
+    return "\n".join(lines) + sep + body
+
+
+def render_agents(root: Path, values: dict | None = None) -> dict[str, str]:
+    """Agent files with the user's profile models applied. Used by init and by `specforge profile sync`."""
+    from .profile import effective, model_for_agent
+    if values is None:
+        cfg = load_config(root)
+        stack = (cfg.get("profile") or {}).get("stack") or {"commands": {}}
+        values = _values(root, cfg, stack)
+    prof = effective(root)
+    out = {}
+    for f in sorted(asset_dir("agents").iterdir(), key=lambda x: x.name):
+        if f.name.endswith(".md"):
+            content = _fill(f.read_text(encoding="utf-8"), values)
+            out[f".claude/agents/{f.name}"] = _with_model(content, model_for_agent(f.name[:-3], prof))
+    return out
+
+
+def sync_agents(root: Path) -> list[str]:
+    root = root.resolve()
+    written = []
+    for rel, content in render_agents(root).items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if not p.exists() or p.read_text(encoding="utf-8") != content:
+            p.write_text(content, encoding="utf-8")
+            written.append(rel)
+    return written
 
 
 def _merge_claude_md(root: Path, block: str) -> str:
@@ -304,6 +343,12 @@ def _merge_settings(root: Path) -> str:
     if not any(cmd in json.dumps(h) for h in post):
         post.append({"matcher": "Edit|Write|MultiEdit",
                      "hooks": [{"type": "command", "command": cmd, "timeout": 30}]})
+    # Programmatic guardrail (not a prompt): block reading/writing secret files. Exit code 2 = deny.
+    pre = hooks.setdefault("PreToolUse", [])
+    guard = "specforge hook guard"
+    if not any(guard in json.dumps(h) for h in pre):
+        pre.append({"matcher": "Read|Edit|Write|MultiEdit|Bash|Grep",
+                    "hooks": [{"type": "command", "command": guard, "timeout": 10}]})
     perms = data.setdefault("permissions", {}).setdefault("allow", [])
     for rule in ["mcp__specforge"]:
         if rule not in perms:
@@ -315,13 +360,21 @@ def _merge_settings(root: Path) -> str:
 
 def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | None = None,
         databases: list[str] | None = None, app_url: str | None = None, max_modules: int = 30,
-        ci: bool = False) -> dict:
+        ci: bool = False, offline: bool = False) -> dict:
     root = root.resolve()
     cfg = load_config(root)
     ix = CodeIndex(root)
-    index_stats = ix.build() if not dry_run else {"skipped": "dry run"}
-    if dry_run and not ix.is_built():
-        ix.build()
+    index_stats = ix.build()
+    grammars: dict = {"skipped": "offline"} if offline else {}
+    if not offline and not dry_run:
+        # the only network step in SpecForge: fetch missing tree-sitter grammars once, then re-parse locally
+        from .parser import fetch_grammars
+        grammars = fetch_grammars(ix.code_languages())
+        if grammars.get("downloaded"):
+            ix.reparse_languages(grammars["downloaded"])
+            index_stats = {**index_stats, **{k: v for k, v in ix.build().items() if k.endswith("total")}}
+            index_stats["tree_sitter_files"] = ix.db.execute(
+                "SELECT COUNT(*) FROM files WHERE parser='tree-sitter'").fetchone()[0]
     stack = detect_stack(root, ix)
     conv = analyze_conventions(ix)
 
@@ -355,12 +408,11 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
     # commands + agents (refreshed on every run so upgrades flow through)
     for c in COMMANDS:
         plan.write(f".claude/commands/sf/{c}.md", _fill(asset(f"commands/{c}.md"), values), overwrite=True)
-    for f in asset_dir("agents").iterdir():
-        if f.name.endswith(".md"):
-            plan.write(f".claude/agents/{f.name}", _fill(f.read_text(encoding="utf-8"), values), overwrite=True)
+    for rel, content in render_agents(root, values).items():
+        plan.write(rel, content, overwrite=True)
 
     # skills: static + generated per project
-    for s in ("code-navigation", "spec-writing", "test-case-design"):
+    for s in ("code-navigation", "spec-writing", "test-case-design", "unit-test-planning"):
         plan.write(f".claude/skills/{s}/SKILL.md", _fill(asset(f"skills/{s}/SKILL.md"), values), overwrite=True)
     if stack["has_frontend"] or cfg.get("e2e") == "playwright":
         plan.write(".claude/skills/playwright-e2e/SKILL.md", asset("skills/playwright-e2e/SKILL.md"), overwrite=True)
@@ -396,5 +448,5 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
         from .report import write_report
         plan.actions.append(("create", write_report(root, ix).relative_to(root).as_posix()))
 
-    return {"root": str(root), "dry_run": dry_run, "index": index_stats, "stack": stack, "connectors": connectors,
+    return {"root": str(root), "dry_run": dry_run, "index": index_stats, "grammars": grammars, "stack": stack, "connectors": connectors,
             "env_needed": env_needed, "actions": plan.actions, "config": cfg}

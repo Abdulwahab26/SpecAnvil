@@ -1,0 +1,20 @@
+{
+  "repo": "https://github.com/fastapi/full-stack-fastapi-template",
+  "budget_tokens": 4000,
+  "cases": [
+    {"task": "add an expiry time to password reset tokens and reject expired ones",
+     "expected": ["generate_password_reset_token", "verify_password_reset_token", "reset_password"]},
+    {"task": "paginate the items list endpoint and show page controls in the frontend",
+     "expected": ["read_items", "ItemsTable"]},
+    {"task": "let admins delete users", "expected": ["delete_user", "DeleteUser"]},
+    {"task": "change how JWT access tokens are created", "expected": ["create_access_token"]},
+    {"task": "hash passwords with a stronger algorithm", "expected": ["get_password_hash", "verify_password"]},
+    {"task": "send a welcome email when a new account is created", "expected": ["generate_new_account_email", "send_email", "create_user"]},
+    {"task": "users should be able to update their own profile", "expected": ["update_user_me"]},
+    {"task": "add a description length limit when creating items", "expected": ["create_item", "ItemCreate"]},
+    {"task": "fix login returning 400 for inactive users", "expected": ["login_access_token", "authenticate"]},
+    {"task": "show a signup form for new users", "expected": ["SignUp", "register_user"]},
+    {"task": "load the current user from the auth token in API dependencies", "expected": ["get_current_user"]},
+    {"task": "make the user settings page let users change their password", "expected": ["ChangePassword", "update_password_me"]}
+  ]
+}

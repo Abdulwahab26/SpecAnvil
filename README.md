@@ -1,6 +1,8 @@
 # SpecForge
 
-**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code, learns your stack and conventions, and sets up everything Claude Code needs to work like a disciplined team: a token-saving code-index MCP, project-specific skills, an 8-agent team, lifecycle commands from ticket grooming to Playwright E2E, and connectors for your ticket system and databases.
+**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything Claude Code needs to work like a disciplined team: a token-saving code-index MCP, project-specific skills, an 11-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, and connectors for your ticket system and databases.
+
+Design notes and decision records: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · measured numbers: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
 
 ```bash
 cd your-repo
@@ -8,7 +10,12 @@ specforge init        # ~1 second on a 250-file repo; no AI calls, nothing leave
 claude                # then: /sf:learn, /sf:flow PROJ-123
 ```
 
-On [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) (React + FastAPI + Postgres), 13 typical lookups returned **18% of the tokens** that reading the same files whole would have cost (**82% saved**, measured by the built-in ledger).
+| Measured | Result |
+|---|---|
+| Token savings, 13 typical lookups on [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) | **84% fewer tokens** than reading the files |
+| Retrieval eval (12 tasks, 4k budget) | recall **1.00**, MRR **0.78** |
+| Refresh after an edit on Django (5.6k files) | **0.14 s** (no-op: 0.09 s) |
+| Network calls during indexing | **none** (tested with sockets blocked) |
 
 ---
 
@@ -19,13 +26,14 @@ your-repo/
 ├── CLAUDE.md                    # SpecForge block added (your content is kept)
 ├── .mcp.json                    # specforge + matching connectors (no secrets; ${ENV} refs)
 ├── .claude/
-│   ├── commands/sf/             # 14 lifecycle commands (below)
-│   ├── agents/                  # spec-analyst, architect, frontend/backend engineer,
-│   │                            # db-optimizer, qa-engineer, e2e-tester, reviewer
+│   ├── commands/sf/             # 18 commands (below)
+│   ├── agents/                  # spec-analyst, architect, frontend/backend engineer, db-optimizer,
+│   │                            # qa-engineer, e2e-tester, reviewer, unit-test-planner,
+│   │                            # unit-test-executor, ticket-archaeologist
 │   ├── skills/                  # code-navigation, spec-writing, test-case-design,
 │   │                            # playwright-e2e, db-optimization (only your engines),
 │   │                            # <repo>-conventions, frontend-patterns, backend-patterns
-│   └── settings.json            # hook: re-index files right after Claude edits them
+│   └── settings.json            # hooks: secret guard (PreToolUse), re-index after edits (PostToolUse)
 ├── specs/
 │   ├── project.md               # stack, commands, sub-projects, modules
 │   ├── conventions.md           # naming, layout, tests, lint + reference implementations
@@ -50,6 +58,10 @@ Everything is **detected, not configured**: languages (300+ via tree-sitter, reg
 | `/sf:verify <id>` | reviewer | AC → code → test table, spec drift, diff review, quality gates; PASS or numbered fixes |
 | `/sf:ship <id>` | — | PR description, changelog, release note, ticket update (asks first) |
 | `/sf:flow <ticket>` | orchestrator | **Runs the whole team**: groom → design → plan → parallel FE/BE + QA → E2E → verify, with human gates (or `--auto`) |
+| `/sf:test-plan <module>` | unit-test-planner (**your planner model**) | Deep test analysis from `test_surface` (branches, side effects, existing tests, real coverage), then executable milestones with technical challenges and approaches, schema-validated |
+| `/sf:test-run <module>` | unit-test-executor (**your executor model**) | Implements milestones one by one; "done" is accepted only when the tool re-runs the tests and they pass; ambiguity is escalated as `blocked`, never improvised |
+| `/sf:backfill` | ticket-archaeologist | Opt-in: pulls Done / In Progress / In Review tickets through your ticket MCP and writes linked specs, resumable, in parallel batches |
+| `/sf:profile` | — | Show or change your models per role and backfill settings |
 | `/sf:spec`, `/sf:status`, `/sf:learn` | — | Quick spec for small changes; board of all features; AI enrichment of the generated specs and skills |
 
 ## The code-index MCP (token reduction)
@@ -63,9 +75,25 @@ Agents burn most of their tokens reading whole files to find one function. `spec
 | `search_symbols`, `file_outline`, `get_symbol` | symbol search, signatures only, one exact symbol |
 | `find_references`, `impact_of`, `changed_symbols` | usages with enclosing symbol, reverse dependencies, symbols touched by a diff |
 | `read_spec(path, section)`, `list_specs`, `spec_drift` | section-level spec reads and drift checks |
-| `project_profile`, `reindex`, `token_savings` | detected stack, refresh, the savings ledger |
+| `test_surface`, `validate_test_plan`, `next_test_milestone`, `update_test_milestone` | unit-test analysis and the enforced milestone workflow |
+| `ticket_keys`, `ticket_trace`, `backfill_progress` | ticket keys in git history, ticket → commits → symbols, resumable backfill state |
+| `project_profile`, `get_profile`, `reindex`, `token_savings` | detected stack, your model/backfill profile, refresh, the savings ledger |
 
 Every call is logged against a *whole-file baseline* so the savings are measured, not claimed. `specforge stats` and `.specforge/report.html` show them.
+
+## Your profile: models per role
+
+Model choices are personal, so they live in `~/.specforge/profile.json` (never committed) and are applied to the agents' `model:` frontmatter:
+
+```bash
+specforge profile                                   # show
+specforge profile set models.test_planner opus      # deep analysis
+specforge profile set models.test_executor haiku    # cheap execution
+specforge profile set models.reviewer sonnet        # any role: spec_analyst, architect, frontend, backend, db, qa, e2e, reviewer, backfill
+specforge profile set backfill.enabled true
+specforge profile set backfill.statuses "Done,In Review,In Progress"
+```
+Values are validated (`opus`, `sonnet`, `haiku`, `fable`, `inherit`, or a full model ID). Precedence: built-in defaults < team defaults in `.specforge/config.json` (`profile_defaults`) < your profile.
 
 ## Specs that can't silently rot
 
@@ -73,7 +101,8 @@ Specs reference code as `` `path::Qualname` ``. `specforge drift` checks each re
 
 ## Privacy and security
 
-- **Local only.** Indexing, detection, drift and reports run on your machine. No telemetry and no network calls (tree-sitter grammars are downloaded once, on first use, from the package's own source).
+- **Local only.** Indexing, detection, drift, test analysis and reports run on your machine with no telemetry. Indexing never touches the network (a test blocks sockets to prove it). The one network step is fetching tree-sitter grammars, done explicitly by `specforge grammars` or by `init` (skip with `--offline`; uncached languages then use the built-in regex extractor).
+- **Enforced, not just instructed.** A `PreToolUse` hook blocks Claude from reading or writing secret files; unit-test "done" is verified by running the tests; plans are schema-checked. See the enforcement table in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Your code only goes where it already goes**: to the model your Claude Code account uses, and only the snippets the agent asks for.
 - **Secrets are never indexed** (`.env*`, keys, keystores, credential files, tfstate…) and secret-looking values (private keys, cloud and API tokens, passwords, credentials in URLs) are **redacted** from tool output.
 - **Connector configs hold no secrets**: `.mcp.json` uses `${ENV_VAR}` references. Database connectors default to read-only or restricted modes.
@@ -93,7 +122,10 @@ specforge doctor
 ## CLI
 
 ```
-specforge init [path] [--dry-run] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
+specforge init [path] [--dry-run] [--offline] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
+specforge profile [set|unset|sync] ...   # your models per role and backfill settings
+specforge tests surface|validate|status <module>
+specforge grammars [--list]              # explicit, one-time grammar download
 specforge connect                 # list the connector catalog
 specforge connect jira figma      # add connectors to .mcp.json  (--remove to drop)
 specforge index [--full] | detect | stats | drift [--lock] [--strict] | report | doctor | serve
@@ -122,7 +154,9 @@ flowchart LR
 
 ```bash
 pip install -e . && pytest -q
-python tests/mcp_smoke.py /path/to/repo     # exercises every MCP tool over stdio
+python tests/mcp_smoke.py /path/to/repo     # exercises the core MCP tools over stdio
+python tests/mcp_new_tools.py /path/to/repo # test, backfill and profile tools
+python tests/evals/run_context_eval.py <repo> tests/evals/context_fullstack_fastapi.json
 ```
 
 License: MIT.

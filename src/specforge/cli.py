@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -18,7 +19,7 @@ def _root(args) -> Path:
 def cmd_init(args) -> int:
     from .bootstrap import run
     res = run(_root(args), dry_run=args.dry_run, force=args.force, tickets=args.tickets,
-              databases=[d.strip() for d in args.db.split(",")] if args.db else None, app_url=args.app_url, ci=args.ci)
+              databases=[d.strip() for d in args.db.split(",")] if args.db else None, app_url=args.app_url, ci=args.ci, offline=args.offline)
     if args.json:
         print(json.dumps({k: v for k, v in res.items() if k != "config"}, indent=2, default=str))
         return 0
@@ -28,6 +29,14 @@ def cmd_init(args) -> int:
     if "files_total" in idx:
         print(f"  index      {idx['files_total']} files, {idx['symbols_total']} symbols "
               f"({idx['tree_sitter_files']} via tree-sitter) in {idx['seconds']}s")
+    g = res.get("grammars") or {}
+    if g.get("downloaded"):
+        print(f"  grammars   downloaded once: {', '.join(g['downloaded'])} (cached at {g.get('cache')})")
+    elif g.get("skipped"):
+        print("  grammars   offline mode: no downloads; uncached languages use the regex extractor")
+    elif g:
+        print("  grammars   all needed grammars already cached locally (no download)"
+              + (f"; unavailable, using regex: {', '.join(g['unavailable'])}" if g.get("unavailable") else ""))
     print("  languages  " + (", ".join(l["lang"] for l in s["languages"][:8]) or "—"))
     for label, key in [("frontend", "frontend"), ("backend", "backend"), ("databases", "databases"),
                        ("tests", "test_frameworks"), ("tickets", "ticket_systems")]:
@@ -49,6 +58,25 @@ def cmd_init(args) -> int:
     if not res["dry_run"]:
         print("\n  Next: open Claude Code here, then try `/sf:learn` and `/sf:groom <ticket>`.")
         print("  Report: .specforge/report.html")
+    return 0
+
+
+def cmd_grammars(args) -> int:
+    from .index import CodeIndex
+    from .parser import fetch_grammars, local_grammars
+    ix = CodeIndex(_root(args))
+    if not ix.is_built():
+        ix.build()
+    langs = args.langs or ix.code_languages()
+    if args.list:
+        local = local_grammars(refresh=True)
+        for l in langs:
+            print(f"  {'✔' if l in local else '·'} {l}")
+        return 0
+    res = fetch_grammars(langs)
+    print(json.dumps(res, indent=2))
+    if res["downloaded"]:
+        print(json.dumps(ix.reparse_languages(res["downloaded"])))
     return 0
 
 
@@ -132,13 +160,62 @@ def cmd_report(args) -> int:
     return 0
 
 
-def cmd_hook(args) -> int:
-    """Claude Code hook: re-index files right after Claude edits them."""
-    if args.event != "post-edit":
+READ_VERBS = re.compile(r"(^|[;&|]\s*|\s)(cat|less|more|head|tail|bat|grep|rg|awk|sed|strings|xxd|od|base64|"
+                        r"cp|scp|rsync|curl|source|\.|type|Get-Content|nano|vim?|code)\s")
+
+
+def _guard(payload: dict) -> int:
+    """PreToolUse guardrail: deny access to secret files. Exit 2 blocks the tool call in Claude Code."""
+    import os
+    import shlex
+    from .config import load_config
+    from .scanner import is_secret
+    if os.environ.get("SPECFORGE_ALLOW_SECRETS") == "1":
         return 0
+    root = Path(payload.get("cwd") or ".")
+    if (root / ".specforge").exists() and load_config(root).get("guard_secrets") is False:
+        return 0
+    tool = payload.get("tool_name", "")
+    ti = payload.get("tool_input") or {}
+    hit = None
+    if tool in ("Read", "Edit", "Write", "MultiEdit"):
+        fp = str(ti.get("file_path") or "")
+        if fp and is_secret(fp.replace("\\", "/")):
+            hit = fp
+    elif tool == "Grep":
+        for k in ("path", "glob"):
+            v = str(ti.get(k) or "")
+            if v and is_secret(v.replace("\\", "/")):
+                hit = v
+    elif tool == "Bash":
+        cmd = str(ti.get("command") or "")
+        if READ_VERBS.search(" " + cmd):
+            try:
+                tokens = shlex.split(cmd, posix=True)
+            except ValueError:
+                tokens = cmd.split()
+            for t in tokens:
+                if "/" in t or "." in t:
+                    if is_secret(t.rstrip(";|&")):
+                        hit = t
+                        break
+    if hit:
+        print(f"SpecForge guard: access to secret file '{hit}' is blocked. Ask the user for the specific "
+              "non-secret value you need, or have them set SPECFORGE_ALLOW_SECRETS=1 for this session.",
+              file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_hook(args) -> int:
+    """Claude Code hooks: `guard` (PreToolUse) and `post-edit` (PostToolUse re-index)."""
     try:
         payload = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
+        return 0
+    if args.event == "guard":
+        return _guard(payload)
+    if args.event != "post-edit":
         return 0
     ti = payload.get("tool_input") or {}
     fp = ti.get("file_path") or ti.get("path")
@@ -153,6 +230,72 @@ def cmd_hook(args) -> int:
     from .index import CodeIndex
     if (root / ".specforge" / "index.db").exists():
         CodeIndex(root).build(only=[rel])
+    return 0
+
+
+def cmd_profile(args) -> int:
+    from . import profile as prof
+    root = Path(args.path or ".").resolve()
+    try:
+        if args.action == "set":
+            if len(args.rest) != 2:
+                print("usage: specforge profile set <key> <value>", file=sys.stderr)
+                return 1
+            prof.set_value(args.rest[0], args.rest[1])
+        elif args.action == "unset":
+            if len(args.rest) != 1:
+                print("usage: specforge profile unset <key>", file=sys.stderr)
+                return 1
+            prof.unset_value(args.rest[0])
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    eff = prof.effective(root)
+    if args.action in ("set", "unset", "sync") and (root / ".specforge").exists():
+        from .bootstrap import sync_agents
+        changed = sync_agents(root)
+        print(f"applied to {root.name}: " + (", ".join(Path(c).stem for c in changed) or "no agent changes"))
+    print(f"profile: {prof.profile_path()}")
+    print("models (agent role → model):")
+    for role, agent in prof.ROLES.items():
+        print(f"  {role:<14} {eff['models'].get(role, 'inherit'):<18} ({agent})")
+    print("backfill: " + json.dumps(eff["backfill"]))
+    return 0
+
+
+def cmd_tests(args) -> int:
+    from . import testing
+    from .config import load_config
+    from .index import CodeIndex
+    root = Path(args.path or ".").resolve()
+    ix = CodeIndex(root)
+    ix.build()
+    sd = load_config(root)["specs_dir"]
+    if args.action == "surface":
+        data = testing.test_surface(ix, args.module, 25)
+        print(f"{data['functions']} functions, {data['untested_functions']} untested, coverage: "
+              f"{data['avg_coverage_pct'] if data['avg_coverage_pct'] is not None else 'n/a'} ({data['coverage_source']})")
+        print(f"side effects: {data['side_effects_in_module']}  mocking in repo: {data['mocking_in_repo']}")
+        for it in data["functions_by_priority"][:25]:
+            cov = f"{it['coverage_pct']}%" if it["coverage_pct"] is not None else "-"
+            print(f"  {it['priority']:>6}  br={it['branches']:<3} refs={it['test_refs']:<3} cov={cov:<6} "
+                  f"{','.join(it['side_effects']) or '-':<24} {it['ref']}")
+        return 0
+    try:
+        plan, path = testing.load_plan(root, args.module, sd)
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return 1
+    if args.action == "validate":
+        errs = testing.validate_plan(plan, ix)
+        print("valid" if not errs else "\n".join(f"  ✘ {e}" for e in errs))
+        return 1 if errs else 0
+    for m in plan["milestones"]:
+        res = m.get("result") or {}
+        print(f"  {m['id']:<5} {m['status']:<12} {m['complexity']}  {m['title'][:60]}"
+              + (f"  ({res.get('notes', '')[:60]})" if m["status"] == "blocked" else ""))
+    done = sum(m["status"] == "done" for m in plan["milestones"])
+    print(f"{done}/{len(plan['milestones'])} done · {path.relative_to(root)}")
     return 0
 
 
@@ -194,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--db", help="comma list: postgres,mysql,sqlserver,mongodb,sqlite")
     p.add_argument("--app-url", help="URL of the running app for Playwright")
     p.add_argument("--ci", action="store_true", help="also add a GitHub Actions spec-drift workflow")
+    p.add_argument("--offline", action="store_true", help="never download parser grammars (regex fallback)")
     p.add_argument("--json", action="store_true")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(fn=cmd_init)
@@ -202,6 +346,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("path", nargs="?")
     p.add_argument("--full", action="store_true")
     p.set_defaults(fn=cmd_index)
+
+    p = sub.add_parser("grammars", help="explicitly download tree-sitter grammars (the only network step)")
+    p.add_argument("langs", nargs="*")
+    p.add_argument("--path")
+    p.add_argument("--list", action="store_true", help="show which grammars are cached locally")
+    p.set_defaults(fn=cmd_grammars)
 
     p = sub.add_parser("detect", help="print detected stack and conventions as JSON")
     p.add_argument("path", nargs="?")
@@ -231,6 +381,18 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("serve", help="run the MCP server on stdio")
     p.set_defaults(fn=lambda a: __import__("specforge.server", fromlist=["main"]).main() or 0)
+
+    p = sub.add_parser("profile", help="show or change your personal profile (models per role, backfill)")
+    p.add_argument("action", nargs="?", default="show", choices=["show", "set", "unset", "sync"])
+    p.add_argument("rest", nargs="*")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_profile)
+
+    p = sub.add_parser("tests", help="unit-test planning: surface | validate | status <module>")
+    p.add_argument("action", choices=["surface", "validate", "status"])
+    p.add_argument("module")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_tests)
 
     p = sub.add_parser("hook", help="internal: Claude Code hook handler")
     p.add_argument("event")

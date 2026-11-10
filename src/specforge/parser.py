@@ -10,7 +10,6 @@ import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
-from .config import DATA_LANGUAGES
 
 try:  # pragma: no cover - import guard
     import tree_sitter_language_pack as tslp
@@ -18,7 +17,51 @@ except Exception:  # noqa: BLE001
     tslp = None
 
 _FAILED_LANGS: set[str] = set()
-PARSER_VERSION = "2"  # bump to force a full re-index after parser changes
+
+# Languages worth extracting symbols from. Everything else (docs, data, config) is indexed as text.
+CODE_LANGUAGES = {
+    "python", "javascript", "typescript", "tsx", "java", "kotlin", "csharp", "go", "rust", "ruby", "php",
+    "swift", "scala", "dart", "c", "cpp", "objc", "elixir", "erlang", "haskell", "lua", "r", "julia",
+    "perl", "fsharp", "clojure", "ocaml", "zig", "vue", "svelte", "groovy", "solidity", "elm", "nim",
+    "crystal", "gleam", "apex", "cobol", "fortran", "pascal", "vb", "matlab", "powershell", "hack",
+}
+
+# Grammar policy: indexing NEVER downloads anything. Grammars are fetched only by the explicit
+# `specforge grammars` step (which `specforge init` runs unless --offline). Files whose grammar
+# is not cached locally fall back to the regex extractor, which is pure Python.
+_LOCAL_GRAMMARS: set[str] | None = None
+
+
+def local_grammars(refresh: bool = False) -> set[str]:
+    global _LOCAL_GRAMMARS
+    if _LOCAL_GRAMMARS is None or refresh:
+        try:
+            _LOCAL_GRAMMARS = set(tslp.downloaded_languages()) if tslp is not None else set()
+        except Exception:  # noqa: BLE001
+            _LOCAL_GRAMMARS = set()
+    return _LOCAL_GRAMMARS
+
+
+def fetch_grammars(langs: list[str]) -> dict:
+    """Explicit, one-time network step: download tree-sitter grammars into the local cache."""
+    if tslp is None:
+        return {"downloaded": [], "unavailable": sorted(langs), "cache": None}
+    wanted = sorted({l for l in langs if l in CODE_LANGUAGES} - local_grammars(refresh=True))
+    ok, bad = [], []
+    for lang in wanted:
+        try:
+            tslp.download([lang])
+            ok.append(lang)
+        except Exception:  # noqa: BLE001 - not in manifest, offline, etc.
+            bad.append(lang)
+    local_grammars(refresh=True)
+    try:
+        cache = str(tslp.cache_dir())
+    except Exception:  # noqa: BLE001
+        cache = None
+    return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
+            "cache": cache}
+PARSER_VERSION = "3"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -90,8 +133,8 @@ def _kind(k) -> str:
 
 
 def _parse_tree_sitter(source: str, lang: str) -> FileParse | None:
-    if tslp is None or lang in _FAILED_LANGS:
-        return None
+    if tslp is None or lang in _FAILED_LANGS or lang not in local_grammars():
+        return None  # never trigger a download from inside indexing
     try:
         res = tslp.process(source, tslp.ProcessConfig(language=lang, structure=True,
                                                       imports=True, exports=True, docstrings=True))
@@ -203,7 +246,7 @@ def _parse_regex(source: str, lang: str) -> FileParse:
 
 def parse_source(rel_path: str, source: str) -> FileParse:
     lang = detect_language(rel_path)
-    if lang in DATA_LANGUAGES or lang == "text":
+    if lang not in CODE_LANGUAGES:
         return FileParse(language=lang, parser="text")
     parsed = _parse_tree_sitter(source, lang)
     if parsed is not None and (parsed.symbols or len(source) < 200):
