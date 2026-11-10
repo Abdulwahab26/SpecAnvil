@@ -40,6 +40,17 @@ def _ensure(ix: CodeIndex) -> None:
     ix.db.executescript(SCHEMA)
 
 
+_LAST_TS = 0.0
+
+
+def _now() -> float:
+    """Strictly increasing timestamps: Windows clocks tick in ~15 ms steps, and a query and the fetch that followed
+    it must never share a time, or episodes would attribute one fetch to two queries."""
+    global _LAST_TS
+    _LAST_TS = max(time.time(), _LAST_TS + 1e-6)
+    return _LAST_TS
+
+
 def _ids_in(ix: CodeIndex, text: str, cap: int = 20) -> list[int]:
     ids = [int(x) for x in ID_RX.findall(text)]
     for path, qual in REF_RX.findall(text):
@@ -61,7 +72,7 @@ def log_call(ix: CodeIndex, session: str, tool: str, args: dict, out: str) -> No
             _ensure(ix)
             ids = _ids_in(ix, out)
             ix.db.execute("INSERT INTO query_log(ts, session, tool, query, results, n) VALUES(?,?,?,?,?,?)",
-                          (time.time(), session, tool, q, json.dumps(ids), len(ids)))
+                          (_now(), session, tool, q, json.dumps(ids), len(ids)))
             ix.db.commit()
         elif tool in FETCH_TOOLS:
             refs = args.get("refs") or [args.get("ref") or args.get("path") or ""]
@@ -74,7 +85,7 @@ def log_call(ix: CodeIndex, session: str, tool: str, args: dict, out: str) -> No
                     hit = ix.find_symbol(str(ref))
                 except Exception:  # noqa: BLE001
                     hit = []
-                rows.append((time.time(), session, tool, hit[0]["id"] if hit else None, str(ref)[:200]))
+                rows.append((_now(), session, tool, hit[0]["id"] if hit else None, str(ref)[:200]))
             ix.db.executemany("INSERT INTO fetch_log VALUES(?,?,?,?,?)", rows)
             ix.db.commit()
     except Exception:  # noqa: BLE001 - telemetry must never break a tool call
@@ -97,7 +108,7 @@ def episodes(ix: CodeIndex, days: int = 30) -> list[dict]:
     out = []
     for i, q in enumerate(qs):
         nxt = next((x["ts"] for x in qs[i + 1:] if x["session"] == q["session"]), float("inf"))
-        fetched = [f for f in by_session[q["session"]] if q["ts"] <= f["ts"] <= min(q["ts"] + WINDOW_S, nxt)]
+        fetched = [f for f in by_session[q["session"]] if q["ts"] < f["ts"] < nxt and f["ts"] <= q["ts"] + WINDOW_S]
         out.append({**q, "results": json.loads(q["results"]), "fetched": fetched,
                     "next_query_s": None if nxt == float("inf") else round(nxt - q["ts"], 1)})
     return out
