@@ -683,3 +683,30 @@ def test_route_handlers_exercised_over_http_count_as_tested(tmp_path):
     refs = {s["ref"] for s in I.untested_symbols(ix)["symbols"]}
     assert "app/api.py::signup" not in refs and "app/crud.py::create_user" not in refs  # handler + what it calls
     assert "app/billing.py::helper_b" in refs
+
+
+def test_reparse_after_grammar_download_really_reparses(tmp_path, monkeypatch):
+    import pytest
+
+    from specforge import parser
+    (tmp_path / "svc.py").write_text("class Svc:\n    def run(self):\n        return 1\n")
+    monkeypatch.setattr(parser, "local_grammars", lambda refresh=False: set())
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    assert ix.db.execute("SELECT parser FROM files WHERE path='svc.py'").fetchone()[0] != "tree-sitter"
+    monkeypatch.undo()
+    if "python" not in parser.local_grammars(refresh=True):
+        pytest.skip("python grammar not cached")
+    assert ix.reparse_languages(["python"])["files_changed"] == 1
+    assert ix.db.execute("SELECT parser FROM files WHERE path='svc.py'").fetchone()[0] == "tree-sitter"
+
+
+def test_crlf_files_parse_like_lf(tmp_path):
+    (tmp_path / "ci.yml").write_bytes(b"jobs:\r\n  build:\r\n    runs-on: ubuntu-latest\r\n")
+    (tmp_path / "m.py").write_bytes(b"MAX = 3\r\n\r\nclass User:\r\n    name: str\r\n\r\n    def go(self):\r\n        return 1\r\n")
+    (tmp_path / "README.md").write_bytes(b"# A\r\n\r\n## B\r\ntext\r\n")
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    q = {(r["qualname"], r["kind"]) for r in ix.db.execute("SELECT qualname, kind FROM symbols")}
+    assert {("jobs.build.runs-on", "key"), ("MAX", "constant"), ("User.name", "field"), ("User.go", "function"),
+            ("A > B", "section")} <= q

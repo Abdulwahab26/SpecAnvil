@@ -61,7 +61,7 @@ def fetch_grammars(langs: list[str]) -> dict:
         cache = None
     return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
             "cache": cache}
-PARSER_VERSION = "8"  # bump to force a full re-index after parser changes
+PARSER_VERSION = "9"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -314,6 +314,8 @@ def _js_assignments(source: str, existing: list[Symbol]) -> list[Symbol]:
 
 
 def parse_source(rel_path: str, source: str) -> FileParse:
+    if "\r" in source:  # CRLF checkouts (Windows, core.autocrlf): line-anchored patterns expect "\n"
+        source = source.replace("\r\n", "\n")
     fp = _parse_symbols(rel_path, source)
     if fp.parser == "text":
         from .configkeys import extract_keys, extract_sections

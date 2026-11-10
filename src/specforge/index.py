@@ -337,7 +337,8 @@ class CodeIndex:
         if not langs:
             return {"files_changed": 0}
         q = ",".join("?" * len(langs))
-        self.db.execute(f"UPDATE files SET mtime_ns=0 WHERE parser!='tree-sitter' AND lang IN ({q})", langs)
+        # clear the hash too: unchanged bytes would otherwise hit the "touched but identical" shortcut and skip the parse
+        self.db.execute(f"UPDATE files SET mtime_ns=0, hash='' WHERE parser!='tree-sitter' AND lang IN ({q})", langs)
         self.db.commit()
         return self.build()
 
