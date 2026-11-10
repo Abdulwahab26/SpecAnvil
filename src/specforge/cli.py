@@ -215,6 +215,12 @@ def cmd_hook(args) -> int:
         return 0
     if args.event == "guard":
         return _guard(payload)
+    if args.event == "compact":
+        from .session import touch_compaction_marker
+        root = Path(payload.get("cwd") or ".").resolve()
+        if (root / ".specforge").exists():
+            touch_compaction_marker(root)
+        return 0
     if args.event != "post-edit":
         return 0
     ti = payload.get("tool_input") or {}
@@ -299,6 +305,53 @@ def cmd_tests(args) -> int:
     return 0
 
 
+def cmd_docs(args) -> int:
+    from .docs import DocEngine
+    from .index import CodeIndex
+    root = Path(args.path or ".").resolve()
+    ix = CodeIndex(root)
+    ix.build()
+    de = DocEngine(ix)
+    if args.action == "facts":
+        if not args.ids:
+            print("usage: specforge docs facts <doc-id>", file=sys.stderr)
+            return 1
+        print(json.dumps(de.facts_for(args.ids[0]), indent=1))
+        return 0
+    if args.action == "plan":
+        for a in de.facts.archetypes():
+            print(f"  {a['archetype']:<16} {a['evidence']}")
+        print()
+    rows = de.status()
+    if args.ids:
+        rows = [r for r in rows if r["id"] in args.ids]
+    if args.action in ("plan", "status"):
+        icon = {"fresh": "✔", "stale": "↻", "unverified": "?", "missing": "✘"}
+        for r in rows:
+            print(f"  {icon[r['status']]} {r['status']:<10} {r['id']:<22} {r['path']}")
+        counts = {}
+        for r in rows:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        print("  " + ", ".join(f"{n} {k}" for k, n in counts.items()))
+        return 0
+    # check
+    failed = 0
+    for r in rows:
+        if r["status"] == "missing" and not args.strict:
+            continue
+        res = de.check(r["id"])
+        stale = r["status"] == "stale"
+        if res["ok"] and not stale:
+            print(f"  ✔ {r['id']}")
+            continue
+        failed += 1
+        print(f"  ✘ {r['id']} ({r['path']})" + ("  [stale: code changed since written]" if stale else ""))
+        for p in res["problems"][:8]:
+            print(f"      - {p}")
+    print(f"{failed} document(s) need work" if failed else "all documents complete and current")
+    return 1 if (failed and args.strict) else 0
+
+
 def cmd_doctor(args) -> int:
     root = _root(args)
     checks = []
@@ -325,6 +378,9 @@ def cmd_doctor(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    import signal
+    if hasattr(signal, "SIGPIPE"):  # `specforge ... | head` should exit quietly
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
     ap = argparse.ArgumentParser(prog="specforge", description="Spec-driven development for any repo.")
     ap.add_argument("--version", action="version", version=f"specforge {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -393,6 +449,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("module")
     p.add_argument("--path")
     p.set_defaults(fn=cmd_tests)
+
+    p = sub.add_parser("docs", help="documentation: plan | status | check | facts <id>")
+    p.add_argument("action", choices=["plan", "status", "check", "facts"])
+    p.add_argument("ids", nargs="*")
+    p.add_argument("--strict", action="store_true", help="check: also fail on missing/stale docs (for CI)")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_docs)
 
     p = sub.add_parser("hook", help="internal: Claude Code hook handler")
     p.add_argument("event")

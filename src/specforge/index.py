@@ -109,6 +109,8 @@ def stem(w: str) -> str:
 
 GENERATED_RX = re.compile(r"(\.gen\.|\.generated\.|/generated/|__generated__|\.pb\.|_pb2\.|/migrations?/versions/|"
                           r"\.d\.ts$|/client/(types|sdk|schemas)\.|openapi)", re.I)
+NONPROD_RX = re.compile(r"(^|/)(examples?|samples?|demos?|docs?|docs_src|benchmarks?|fixtures?|testdata|"
+                        r"stories|storybook|playground|scripts|tools)(/|$)", re.I)
 TEST_RX = re.compile(r"(^|/)(tests?|__tests__|spec|e2e)(/|$)|[._](test|spec)\.[a-z]+$|(^|/)test_[^/]+$|Tests?\.\w+$")
 
 
@@ -356,7 +358,7 @@ class CodeIndex:
         if not terms:
             return []
         fts = " OR ".join(f'"{t}"*' for t in terms)
-        sql = ("SELECT s.id,s.path,s.name,s.qualname,s.kind,s.signature,s.start_line,s.end_line,s.doc,s.tokens,"
+        sql = ("SELECT s.id,s.path,s.name,s.qualname,s.kind,s.signature,s.start_line,s.end_line,s.doc,s.tokens,s.body_hash,"
                "bm25(symbols_fts, 10.0, 4.0, 2.0, 1.5, 1.0) AS score "
                "FROM symbols_fts JOIN symbols s ON s.id = symbols_fts.rowid WHERE symbols_fts MATCH ?")
         args: list = [fts]
@@ -369,13 +371,35 @@ class CodeIndex:
         sql += " ORDER BY score LIMIT ?"
         args.append(limit * 3)
         rows = [dict(r) for r in self.db.execute(sql, args)]
-        # exact-name boost
         ql = query.strip().lower()
+        wants_tests = any(t.startswith("test") or t.startswith("spec") for t in terms)
+        wants_nonprod = any(t.startswith(("exampl", "sampl", "demo", "doc", "bench", "fixtur")) for t in terms)
         for r in rows:
+            name_terms = split_terms(r["qualname"]).split()
+            path_terms = split_terms(r["path"]).split()
+            name_cov = sum(any(x.startswith(t) for x in name_terms) for t in terms)
+            path_cov = sum(any(x.startswith(t) for x in path_terms) for t in terms)
+            adj = -4.0 * name_cov - 1.0 * path_cov
             if r["name"].lower() == ql or r["qualname"].lower() == ql:
-                r["score"] -= 100
+                adj -= 100  # exact name
+            if TEST_RX.search(r["path"]) and not wants_tests:
+                adj += 9
+            if NONPROD_RX.search(r["path"]) and not wants_nonprod:
+                adj += 6
+            if GENERATED_RX.search(r["path"]):
+                adj += 10
+            r["score"] += adj
         rows.sort(key=lambda r: r["score"])
-        return rows[:limit]
+        # drop results nested inside (or containing) a better-ranked result: never pay for the same lines twice
+        picked: list[dict] = []
+        for r in rows:
+            if any(p["path"] == r["path"] and p["start_line"] <= r["start_line"] and r["end_line"] <= p["end_line"]
+                   for p in picked):
+                continue  # already covered by a better-ranked enclosing symbol
+            picked.append(r)
+            if len(picked) >= limit:
+                break
+        return picked
 
     def find_symbol(self, ref: str | int, path: str | None = None) -> list[sqlite3.Row]:
         if isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit()):
@@ -422,7 +446,10 @@ class CodeIndex:
                 listed.append(s["path"])
         return "\n".join(out), listed
 
-    def context_for(self, task: str, budget_tokens: int | None = None) -> tuple[str, list[str]]:
+    def context_for(self, task: str, budget_tokens: int | None = None,
+                    delivered: dict | None = None) -> tuple[str, list[str]]:
+        """`delivered` (id -> body_hash) is the session's record of bodies already sent; unchanged ones are
+        referenced instead of resent, and newly sent bodies are added to it."""
         budget = budget_tokens or int(self.cfg.get("context_budget_tokens", 6000))
         words = [w for w in split_terms(task).split() if w not in STOPWORDS and len(w) > 2]
         if not words:
@@ -456,8 +483,14 @@ class CodeIndex:
         sig_only: list[dict] = []
         seen_parents: set[tuple[str, str]] = set()
         per_file: Counter = Counter()
+        already: list[str] = []
         for h in hits:
             key = (h["path"], h["qualname"].rsplit(".", 1)[0])
+            if delivered is not None and delivered.get(h["id"]) == h["body_hash"]:
+                if len(already) < 15:
+                    already.append(f"[{h['id']}] {h['qualname']}")
+                files.append(h["path"])
+                continue
             if h["tokens"] and used + h["tokens"] < full_budget and key not in seen_parents \
                     and per_file[h["path"]] < 3:
                 per_file[h["path"]] += 1
@@ -466,10 +499,14 @@ class CodeIndex:
                 used += estimate_tokens(block)
                 out.append(block)
                 files.append(h["path"])
+                if delivered is not None:
+                    delivered[h["id"]] = h["body_hash"]
                 if h["kind"] in ("class", "interface", "struct"):
                     seen_parents.add((h["path"], h["qualname"]))
             else:
                 sig_only.append(h)
+        if already:
+            out.insert(3, "Already in your context this session (unchanged, not resent): " + ", ".join(already))
         if sig_only:
             out.append("\n### Related (signatures only — fetch with get_symbol if needed)")
             for h in sig_only:

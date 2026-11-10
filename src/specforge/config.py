@@ -33,7 +33,8 @@ SECRET_GLOBS = [
     ".env", ".env.*", "*.env", "!.env.example", "!.env.sample", "!.env.template",
     "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore", "id_rsa*",
     "id_ed25519*", "*.kdbx", "credentials*", "*secret*.json", "*secrets*.y*ml",
-    ".npmrc", ".pypirc", ".netrc", "*.tfstate", "*.tfvars",
+    ".npmrc", ".pypirc", ".netrc", "*.tfstate", "*.tfvars", "local.settings.json",
+    "secrets.json", "*.publishsettings", "!local.settings.sample.json", "!local.settings.example.json",
 ]
 
 # Languages we parse only as text (no symbols).

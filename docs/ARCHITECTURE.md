@@ -10,7 +10,8 @@ flowchart TB
     DT[detect<br/>stack · DBs · tickets · conventions] --> BS[bootstrap]
     IX --> BS
     PR[(~/.specforge/profile.json<br/>models per role · backfill prefs)] --> BS
-    IX --> MCP[specforge-mcp<br/>23 tools]
+    IX --> MCP[specforge-mcp<br/>29 tools · tiers]
+    FX[facts + docs<br/>archetypes · catalog · checks] --> MCP
     TS[testing<br/>surface · coverage · plan schema] --> MCP
     TK[tickets<br/>git archaeology · resumable state] --> MCP
   end
@@ -28,11 +29,11 @@ flowchart TB
 
 | Domain (weight) | Where it shows up |
 |---|---|
-| **Agentic architecture & orchestration** (27%) | `/sf:flow` orchestrator + 11 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
+| **Agentic architecture & orchestration** (27%) | `/sf:flow` orchestrator + 12 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
 | **Claude Code configuration & workflows** (20%) | Generated `CLAUDE.md` block, slash commands with `argument-hint`, subagents with `model` and `tools` frontmatter, project skills generated from the repo's own code, `.mcp.json` merge that never clobbers user servers, `settings.json` hooks and permissions. Upgrades re-render assets without touching user-edited specs. |
 | **Prompt engineering & structured output** (20%) | Commands state role, inputs, procedure, output contract and next step. Machine-readable artifacts where a program consumes them (`milestones.json`, schema-checked by `validate_plan`); Gherkin ACs and `path::Qualname` refs in specs so drift can be checked by code. |
 | **Tool design & MCP integration** (18%) | Narrow, composable tools with ids that chain (`search_symbols` → `get_symbol(id)`), budget parameters, section-level reads, errors raised as MCP `isError` with an actionable next step, and tools that return the minimum context a small model needs (`next_test_milestone`). Connector catalog picks third-party MCP servers from detected signals with `${ENV}` secrets and read-only defaults. |
-| **Context management & reliability** (15%) | Token-budgeted retrieval with a measured ledger; incremental index kept fresh by a hook; specs sized ≤ ~1.5k tokens and read by section; subagents receive file paths, not transcripts; retrieval quality measured by an eval set (`tests/evals`). |
+| **Context management & reliability** (15%) | Token-budgeted retrieval with a measured ledger; server-enforced session dedupe with compaction reset and large-symbol skeletons (ADR-10); incremental index kept fresh by a hook; specs sized ≤ ~1.5k tokens and read by section; subagents receive file paths, not transcripts; retrieval quality measured by an eval set (`tests/evals`). |
 
 **Programmatic vs prompt-based enforcement** is applied deliberately throughout:
 
@@ -45,6 +46,9 @@ flowchart TB
 | Executor may not touch production code or edit the plan | `tools:` allow-list on the executor agent; status changes only via the tool |
 | Specs don't silently diverge from code | `spec_drift` + `specforge drift --strict` in CI |
 | Indexing never uses the network | grammar policy in `parser.py` + socket-blocking test |
+| Never pay twice for the same code in a session | server-side delivery ledger; PreCompact hook resets it |
+| Every required document exists, has its sections and covers every endpoint/function/setting | `doc_check` / `specforge docs check --strict`; `doc_register` refuses incomplete docs |
+| Docs don't silently go out of date | facts hash per document; status flips to stale when the code changes |
 | Model choices are valid Claude Code values | `profile.validate_model` |
 
 Prompts still carry intent and judgement (how to design a test, how to word an AC); code carries every rule that has a right answer.
@@ -92,3 +96,14 @@ Prompts still carry intent and judgement (how to design a test, how to word an A
 
 ### ADR-8: Secrets defence in depth
 Layers: never indexed (scanner), redacted in any returned text (tokens.redact), blocked at tool level (PreToolUse guard, overridable per session with `SPECFORGE_ALLOW_SECRETS=1`), never written to configs (`${ENV}` references), DB connectors read-only by default. The guard fails open if SpecForge isn't installed, so it never bricks a session; the other layers still apply.
+
+### ADR-9: Documentation from extracted facts, gated by code
+**Context.** "Write all the docs" fails two ways: the model invents things, or it silently skips items (one endpoint, one function, one setting).
+**Decision.** A data-driven catalog maps repo archetypes to required documents and sections. Facts are extracted locally (regex over the index, with file:line) and handed to a `doc-writer` subagent on the user's chosen model. `doc_check` enforces required sections, mentions of every coverage item, no placeholders outside "Open questions", and working links. `doc_register` refuses incomplete documents and stores a hash of the facts, so a document turns *stale* as soon as the code it describes changes. Teams extend the catalog in `.specforge/docs-catalog.json`.
+**Trade-off.** Regex fact extraction covers common frameworks, not every one. Unknown patterns produce fewer facts, never wrong ones, and the catalog stays usable.
+
+### ADR-10: Server-enforced session dedupe and large-symbol skeletons
+**Context.** In long sessions agents re-fetch the same code repeatedly, and a few huge functions dominate token spend.
+**Decision.** The MCP server keeps a per-session ledger (symbol id → body hash). Unchanged bodies are referenced, not resent; `get_context` spends its budget only on new code. A PreCompact hook resets the ledger so the model is never told it "has" code that was summarised away. Symbols over 1,500 tokens return a structural skeleton (top-level statements, nested blocks folded) with `full=true` / `focus=` escape hatches.
+**Result.** −47% tokens vs jCodeMunch on its own benchmark (−31% with skeletons off), with comparable picks.
+**Trade-off.** A skeleton can cost one extra call when the agent needs a nested block. `focus=` keeps that call small.

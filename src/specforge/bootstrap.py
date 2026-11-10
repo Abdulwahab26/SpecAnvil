@@ -23,7 +23,7 @@ from .specs import lock_specs
 MARK_START = "<!-- specforge:start -->"
 MARK_END = "<!-- specforge:end -->"
 COMMANDS = ["groom", "design", "plan", "fe", "be", "db", "qa", "e2e", "verify", "flow", "ship", "status",
-            "learn", "spec", "test-plan", "test-run", "backfill", "profile"]
+            "learn", "spec", "test-plan", "test-run", "backfill", "profile", "docs"]
 
 
 def asset(path: str) -> str:
@@ -264,6 +264,7 @@ Specs in `{values['specs_dir']}/` are the source of truth: `project.md`, `conven
 Workflow: `/sf:groom` → `/sf:design` → `/sf:plan` → `/sf:be` + `/sf:fe` → `/sf:db` → `/sf:qa` → `/sf:e2e` → `/sf:verify` → `/sf:ship`
 (or `/sf:flow <ticket>` to run the agent team end to end; `/sf:spec` for small changes; `/sf:status` for the board).
 Unit tests: `/sf:test-plan <module>` (planner model) → `/sf:test-run <module>` (executor model). History: `/sf:backfill`.
+Documentation: `/sf:docs` writes every document this repo type needs (docs model), checked by `specforge docs check`.
 Models per role live in your personal profile: `/sf:profile` or `specforge profile set models.<role> <model>`.
 
 ### Code navigation (saves tokens)
@@ -349,6 +350,11 @@ def _merge_settings(root: Path) -> str:
     if not any(guard in json.dumps(h) for h in pre):
         pre.append({"matcher": "Read|Edit|Write|MultiEdit|Bash|Grep",
                     "hooks": [{"type": "command", "command": guard, "timeout": 10}]})
+    # When Claude Code compacts the conversation, reset the MCP session's "already sent" ledger.
+    comp = hooks.setdefault("PreCompact", [])
+    ccmd = "specforge hook compact || true"
+    if not any(ccmd in json.dumps(h) for h in comp):
+        comp.append({"hooks": [{"type": "command", "command": ccmd, "timeout": 10}]})
     perms = data.setdefault("permissions", {}).setdefault("allow", [])
     for rule in ["mcp__specforge"]:
         if rule not in perms:

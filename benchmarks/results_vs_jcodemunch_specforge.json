@@ -1,0 +1,378 @@
+{
+ "default": [
+  {
+   "repo": "express",
+   "queries": [
+    {
+     "query": "router route handler",
+     "search_tokens": 148,
+     "fetch_tokens": 1394,
+     "total": 1542,
+     "fetched": [
+      "method Route._handles_method",
+      "function handle",
+      "method Layer.handle_request"
+     ]
+    },
+    {
+     "query": "middleware",
+     "search_tokens": 136,
+     "fetch_tokens": 328,
+     "total": 464,
+     "fetched": [
+      "function init",
+      "function module.exports",
+      "function andRestrictTo"
+     ]
+    },
+    {
+     "query": "error exception",
+     "search_tokens": 105,
+     "fetch_tokens": 212,
+     "total": 317,
+     "fetched": [
+      "method Layer.handle_error",
+      "function error",
+      "function error"
+     ]
+    },
+    {
+     "query": "request response",
+     "search_tokens": 127,
+     "fetch_tokens": 182,
+     "total": 309,
+     "fetched": [
+      "method Layer.handle_request",
+      "method req.accepts",
+      "method req.acceptsEncodings"
+     ]
+    },
+    {
+     "query": "param bind",
+     "search_tokens": 112,
+     "fetch_tokens": 449,
+     "total": 561,
+     "fetched": [
+      "method app.param",
+      "method req.param",
+      "function param"
+     ]
+    }
+   ],
+   "index_seconds": 0.21,
+   "total": 3193
+  },
+  {
+   "repo": "fastapi",
+   "queries": [
+    {
+     "query": "router route handler",
+     "search_tokens": 204,
+     "fetch_tokens": 593,
+     "total": 797,
+     "fetched": [
+      "function APIRoute.get_route_handler",
+      "function APIRoute.handle",
+      "function _IncludedRouter.handle"
+     ]
+    },
+    {
+     "query": "middleware",
+     "search_tokens": 221,
+     "fetch_tokens": 823,
+     "total": 1044,
+     "fetched": [
+      "function FastAPI.middleware",
+      "function middleware",
+      "function FastAPI.build_middleware_stack"
+     ]
+    },
+    {
+     "query": "error exception",
+     "search_tokens": 136,
+     "fetch_tokens": 209,
+     "total": 345,
+     "fetched": [
+      "function ValidationException.errors",
+      "class RequestValidationError",
+      "class ResponseValidationError"
+     ]
+    },
+    {
+     "query": "request response",
+     "search_tokens": 247,
+     "fetch_tokens": 724,
+     "total": 971,
+     "fetched": [
+      "function request_response",
+      "function get_request_handler",
+      "function test_request_with_depends_annotated.extract_request_info"
+     ]
+    },
+    {
+     "query": "param bind",
+     "search_tokens": 139,
+     "fetch_tokens": 994,
+     "total": 1133,
+     "fetched": [
+      "class ParamTypes",
+      "class Param",
+      "class ParamDetails"
+     ]
+    }
+   ],
+   "index_seconds": 1.57,
+   "total": 4290
+  },
+  {
+   "repo": "gin",
+   "queries": [
+    {
+     "query": "router route handler",
+     "search_tokens": 189,
+     "fetch_tokens": 270,
+     "total": 459,
+     "fetched": [
+      "method handle",
+      "method Handle",
+      "method combineHandlers"
+     ]
+    },
+    {
+     "query": "middleware",
+     "search_tokens": 142,
+     "fetch_tokens": 273,
+     "total": 415,
+     "fetched": [
+      "method Use",
+      "method Use",
+      "function TestMiddlewareAbort"
+     ]
+    },
+    {
+     "query": "error exception",
+     "search_tokens": 119,
+     "fetch_tokens": 142,
+     "total": 261,
+     "fetched": [
+      "method Error",
+      "method Errors",
+      "function ErrorLogger"
+     ]
+    },
+    {
+     "query": "request response",
+     "search_tokens": 155,
+     "fetch_tokens": 231,
+     "total": 386,
+     "fetched": [
+      "method requestHeader",
+      "function redirectRequest",
+      "method ServeHTTP"
+     ]
+    },
+    {
+     "query": "param bind",
+     "search_tokens": 148,
+     "fetch_tokens": 154,
+     "total": 302,
+     "fetched": [
+      "method Param",
+      "function countParams",
+      "method AddParam"
+     ]
+    }
+   ],
+   "index_seconds": 0.22,
+   "total": 1823
+  }
+ ],
+ "uncapped": [
+  {
+   "repo": "express",
+   "queries": [
+    {
+     "query": "router route handler",
+     "search_tokens": 153,
+     "fetch_tokens": 1397,
+     "total": 1550,
+     "fetched": [
+      "method Route._handles_method",
+      "function handle",
+      "method Layer.handle_request"
+     ]
+    },
+    {
+     "query": "middleware",
+     "search_tokens": 141,
+     "fetch_tokens": 331,
+     "total": 472,
+     "fetched": [
+      "function init",
+      "function module.exports",
+      "function andRestrictTo"
+     ]
+    },
+    {
+     "query": "error exception",
+     "search_tokens": 108,
+     "fetch_tokens": 215,
+     "total": 323,
+     "fetched": [
+      "method Layer.handle_error",
+      "function error",
+      "function error"
+     ]
+    },
+    {
+     "query": "request response",
+     "search_tokens": 132,
+     "fetch_tokens": 185,
+     "total": 317,
+     "fetched": [
+      "method Layer.handle_request",
+      "method req.accepts",
+      "method req.acceptsEncodings"
+     ]
+    },
+    {
+     "query": "param bind",
+     "search_tokens": 117,
+     "fetch_tokens": 452,
+     "total": 569,
+     "fetched": [
+      "method app.param",
+      "method req.param",
+      "function param"
+     ]
+    }
+   ],
+   "index_seconds": 0.15,
+   "total": 3231
+  },
+  {
+   "repo": "fastapi",
+   "queries": [
+    {
+     "query": "router route handler",
+     "search_tokens": 204,
+     "fetch_tokens": 593,
+     "total": 797,
+     "fetched": [
+      "function APIRoute.get_route_handler",
+      "function APIRoute.handle",
+      "function _IncludedRouter.handle"
+     ]
+    },
+    {
+     "query": "middleware",
+     "search_tokens": 221,
+     "fetch_tokens": 823,
+     "total": 1044,
+     "fetched": [
+      "function FastAPI.middleware",
+      "function middleware",
+      "function FastAPI.build_middleware_stack"
+     ]
+    },
+    {
+     "query": "error exception",
+     "search_tokens": 136,
+     "fetch_tokens": 209,
+     "total": 345,
+     "fetched": [
+      "function ValidationException.errors",
+      "class RequestValidationError",
+      "class ResponseValidationError"
+     ]
+    },
+    {
+     "query": "request response",
+     "search_tokens": 247,
+     "fetch_tokens": 3528,
+     "total": 3775,
+     "fetched": [
+      "function request_response",
+      "function get_request_handler",
+      "function test_request_with_depends_annotated.extract_request_info"
+     ]
+    },
+    {
+     "query": "param bind",
+     "search_tokens": 139,
+     "fetch_tokens": 994,
+     "total": 1133,
+     "fetched": [
+      "class ParamTypes",
+      "class Param",
+      "class ParamDetails"
+     ]
+    }
+   ],
+   "index_seconds": 1.77,
+   "total": 7094
+  },
+  {
+   "repo": "gin",
+   "queries": [
+    {
+     "query": "router route handler",
+     "search_tokens": 189,
+     "fetch_tokens": 270,
+     "total": 459,
+     "fetched": [
+      "method handle",
+      "method Handle",
+      "method combineHandlers"
+     ]
+    },
+    {
+     "query": "middleware",
+     "search_tokens": 142,
+     "fetch_tokens": 273,
+     "total": 415,
+     "fetched": [
+      "method Use",
+      "method Use",
+      "function TestMiddlewareAbort"
+     ]
+    },
+    {
+     "query": "error exception",
+     "search_tokens": 119,
+     "fetch_tokens": 142,
+     "total": 261,
+     "fetched": [
+      "method Error",
+      "method Errors",
+      "function ErrorLogger"
+     ]
+    },
+    {
+     "query": "request response",
+     "search_tokens": 155,
+     "fetch_tokens": 231,
+     "total": 386,
+     "fetched": [
+      "method requestHeader",
+      "function redirectRequest",
+      "method ServeHTTP"
+     ]
+    },
+    {
+     "query": "param bind",
+     "search_tokens": 148,
+     "fetch_tokens": 154,
+     "total": 302,
+     "fetched": [
+      "method Param",
+      "function countParams",
+      "method AddParam"
+     ]
+    }
+   ],
+   "index_seconds": 0.16,
+   "total": 1823
+  }
+ ]
+}

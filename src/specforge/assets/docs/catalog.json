@@ -1,0 +1,949 @@
+{
+ "_note": "Document catalog for /sf:docs. Each doc lists required section headings (checked by `specforge docs check`), the local facts it is built from, and an optional coverage fact whose every item must appear in the document. Add your own entries in .specforge/docs-catalog.json (same shape) to extend or override.",
+ "docs": [
+  {
+   "id": "docs-index",
+   "title": "Documentation index",
+   "path": "docs/README.md",
+   "archetypes": "all",
+   "purpose": "Entry point listing every document, who it is for and when to read it.",
+   "sections": [
+    "Start here",
+    "Documents",
+    "Keeping docs current"
+   ],
+   "facts": [
+    "doc_list"
+   ],
+   "coverage": null,
+   "audience": "everyone"
+  },
+  {
+   "id": "readme",
+   "title": "README",
+   "path": "README.md",
+   "archetypes": "all",
+   "purpose": "What the repo is, how to run it in five minutes, and where to go next. Update the existing README in place; keep content the team wrote.",
+   "sections": [
+    "Overview",
+    "Features",
+    "Quick start",
+    "Project structure",
+    "Documentation"
+   ],
+   "facts": [
+    "stack",
+    "commands",
+    "modules",
+    "projects"
+   ],
+   "coverage": null,
+   "audience": "everyone"
+  },
+  {
+   "id": "architecture",
+   "title": "Architecture overview",
+   "path": "docs/architecture/overview.md",
+   "archetypes": "all",
+   "purpose": "C4-style system context, containers and components, key flows and technology choices.",
+   "sections": [
+    "Context",
+    "Containers",
+    "Components",
+    "Key flows",
+    "Technology choices",
+    "Cross-cutting concerns"
+   ],
+   "facts": [
+    "stack",
+    "modules",
+    "projects",
+    "integrations",
+    "databases"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "adr-index",
+   "title": "Architecture decision records",
+   "path": "docs/architecture/decisions/README.md",
+   "archetypes": "all",
+   "purpose": "Index of ADRs plus ADR-0001 recording the current architecture as the baseline decision.",
+   "sections": [
+    "Index",
+    "How to add an ADR"
+   ],
+   "facts": [
+    "stack"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "getting-started",
+   "title": "Getting started",
+   "path": "docs/getting-started.md",
+   "archetypes": "all",
+   "purpose": "From clone to running app and green tests on a new machine.",
+   "sections": [
+    "Prerequisites",
+    "Setup",
+    "Configuration",
+    "Run locally",
+    "Run tests",
+    "Common problems"
+   ],
+   "facts": [
+    "commands",
+    "projects",
+    "env_vars",
+    "stack"
+   ],
+   "coverage": null,
+   "audience": "new joiners"
+  },
+  {
+   "id": "configuration",
+   "title": "Configuration reference",
+   "path": "docs/configuration.md",
+   "archetypes": "all",
+   "purpose": "Every environment variable and config file: purpose, default, required or not, where it is read.",
+   "sections": [
+    "Environment variables",
+    "Configuration files",
+    "Secrets",
+    "Per-environment differences"
+   ],
+   "facts": [
+    "env_vars",
+    "config_files"
+   ],
+   "coverage": "env_vars",
+   "audience": "engineers"
+  },
+  {
+   "id": "contributing",
+   "title": "Contributing guide",
+   "path": "CONTRIBUTING.md",
+   "archetypes": "all",
+   "purpose": "How changes get made here: workflow, conventions, tests, reviews, definition of done.",
+   "sections": [
+    "Workflow",
+    "Branching and commits",
+    "Code style",
+    "Tests",
+    "Pull requests",
+    "Definition of done"
+   ],
+   "facts": [
+    "conventions",
+    "ci",
+    "commands"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "deployment",
+   "title": "Deployment guide",
+   "path": "docs/operations/deployment.md",
+   "archetypes": "all",
+   "purpose": "Environments, pipeline, release, rollback and post-deploy checks.",
+   "sections": [
+    "Environments",
+    "Build",
+    "Pipeline",
+    "Release steps",
+    "Rollback",
+    "Post-deploy checks"
+   ],
+   "facts": [
+    "ci",
+    "infra_resources",
+    "commands"
+   ],
+   "coverage": null,
+   "audience": "engineers, ops"
+  },
+  {
+   "id": "runbook",
+   "title": "Operations runbook",
+   "path": "docs/operations/runbook.md",
+   "archetypes": "all",
+   "purpose": "What on-call needs at 3 a.m.: health checks, alerts, common incidents and fixes, escalation.",
+   "sections": [
+    "Service overview",
+    "Health checks",
+    "Alerts and responses",
+    "Common incidents",
+    "Escalation"
+   ],
+   "facts": [
+    "integrations",
+    "env_vars",
+    "endpoints"
+   ],
+   "coverage": null,
+   "audience": "on-call"
+  },
+  {
+   "id": "security",
+   "title": "Security overview",
+   "path": "docs/security.md",
+   "archetypes": "all",
+   "purpose": "Authentication, authorization, secrets, data protection, dependencies, vulnerability reporting.",
+   "sections": [
+    "Authentication",
+    "Authorization",
+    "Secrets management",
+    "Data protection",
+    "Dependency management",
+    "Reporting vulnerabilities"
+   ],
+   "facts": [
+    "auth",
+    "env_vars",
+    "integrations"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "troubleshooting",
+   "title": "Troubleshooting",
+   "path": "docs/troubleshooting.md",
+   "archetypes": "all",
+   "purpose": "Symptoms and fixes for the problems developers actually hit.",
+   "sections": [
+    "Symptoms and fixes",
+    "Logs",
+    "Debugging locally",
+    "FAQ"
+   ],
+   "facts": [
+    "commands",
+    "env_vars"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "glossary",
+   "title": "Glossary",
+   "path": "docs/glossary.md",
+   "archetypes": "all",
+   "purpose": "Domain and technical terms used in code and conversations.",
+   "sections": [
+    "Terms"
+   ],
+   "facts": [
+    "models",
+    "modules"
+   ],
+   "coverage": null,
+   "audience": "everyone"
+  },
+  {
+   "id": "testing-strategy",
+   "title": "Testing strategy",
+   "path": "docs/testing/strategy.md",
+   "archetypes": "all",
+   "purpose": "Test pyramid, tools, where tests live, how to run them, coverage and CI gates.",
+   "sections": [
+    "Test pyramid",
+    "Tools",
+    "Where tests live",
+    "How to run",
+    "Coverage",
+    "CI gates"
+   ],
+   "facts": [
+    "tests",
+    "commands",
+    "ci"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "api-reference",
+   "title": "API reference",
+   "path": "docs/api/reference.md",
+   "archetypes": [
+    "backend",
+    "microservices"
+   ],
+   "purpose": "Every HTTP endpoint: method, path, auth, request, response, errors. Generated from code, not memory.",
+   "sections": [
+    "Base URL and versioning",
+    "Authentication",
+    "Endpoints",
+    "Errors",
+    "Pagination and filtering",
+    "Rate limits"
+   ],
+   "facts": [
+    "endpoints",
+    "auth"
+   ],
+   "coverage": "endpoints",
+   "audience": "engineers"
+  },
+  {
+   "id": "data-model",
+   "title": "Data model",
+   "path": "docs/data/data-model.md",
+   "archetypes": [
+    "backend",
+    "microservices",
+    "azure-functions",
+    "aws-lambda",
+    "data-pipeline"
+   ],
+   "purpose": "Entities, relationships (Mermaid ERD), migrations, indexes and retention.",
+   "sections": [
+    "Entities",
+    "Relationships",
+    "Migrations",
+    "Indexes",
+    "Data retention"
+   ],
+   "facts": [
+    "models",
+    "migrations",
+    "databases"
+   ],
+   "coverage": "models",
+   "audience": "engineers"
+  },
+  {
+   "id": "integrations",
+   "title": "Integrations",
+   "path": "docs/architecture/integrations.md",
+   "archetypes": [
+    "backend",
+    "azure-functions",
+    "aws-lambda",
+    "microservices",
+    "frontend"
+   ],
+   "purpose": "External services and messaging: contracts, auth, failure handling, timeouts.",
+   "sections": [
+    "External services",
+    "Messaging",
+    "Failure handling",
+    "Contracts"
+   ],
+   "facts": [
+    "integrations",
+    "env_vars"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "observability",
+   "title": "Observability",
+   "path": "docs/operations/observability.md",
+   "archetypes": [
+    "backend",
+    "azure-functions",
+    "aws-lambda",
+    "microservices"
+   ],
+   "purpose": "Logging, metrics, tracing, dashboards and alerts.",
+   "sections": [
+    "Logging",
+    "Metrics",
+    "Tracing",
+    "Dashboards",
+    "Alerts"
+   ],
+   "facts": [
+    "integrations"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "frontend-architecture",
+   "title": "Frontend architecture",
+   "path": "docs/frontend/architecture.md",
+   "archetypes": [
+    "frontend"
+   ],
+   "purpose": "App structure, routing, state, data fetching, styling, builds and environments.",
+   "sections": [
+    "App structure",
+    "Routing",
+    "State management",
+    "Data fetching",
+    "Styling",
+    "Build and environments"
+   ],
+   "facts": [
+    "stack",
+    "routes",
+    "components",
+    "env_vars"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "routes",
+   "title": "Route map",
+   "path": "docs/frontend/routes.md",
+   "archetypes": [
+    "frontend"
+   ],
+   "purpose": "Every page/route, what it shows, auth guard, data it loads.",
+   "sections": [
+    "Route map",
+    "Guards and auth",
+    "Lazy loading"
+   ],
+   "facts": [
+    "routes"
+   ],
+   "coverage": "routes",
+   "audience": "engineers"
+  },
+  {
+   "id": "components",
+   "title": "Component catalog",
+   "path": "docs/frontend/components.md",
+   "archetypes": [
+    "frontend"
+   ],
+   "purpose": "Shared and feature components: purpose, key props, where used.",
+   "sections": [
+    "Component catalog",
+    "Shared UI kit",
+    "Conventions"
+   ],
+   "facts": [
+    "components"
+   ],
+   "coverage": "components",
+   "audience": "engineers"
+  },
+  {
+   "id": "accessibility",
+   "title": "Accessibility",
+   "path": "docs/frontend/accessibility.md",
+   "archetypes": [
+    "frontend"
+   ],
+   "purpose": "Target standard, patterns, testing approach, known gaps.",
+   "sections": [
+    "Standard",
+    "Patterns",
+    "Testing",
+    "Known gaps"
+   ],
+   "facts": [
+    "components"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "qa-framework",
+   "title": "Test automation framework",
+   "path": "docs/qa/framework-architecture.md",
+   "archetypes": [
+    "qa-automation"
+   ],
+   "purpose": "How the automation framework is built: layers, page objects, fixtures, config, reporting.",
+   "sections": [
+    "Overview",
+    "Folder structure",
+    "Page objects",
+    "Fixtures and hooks",
+    "Configuration",
+    "Reporting"
+   ],
+   "facts": [
+    "tests",
+    "page_objects",
+    "stack"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "test-inventory",
+   "title": "Test inventory",
+   "path": "docs/qa/test-inventory.md",
+   "archetypes": [
+    "qa-automation",
+    "backend",
+    "frontend"
+   ],
+   "purpose": "Every suite and spec file with what it covers, tags and gaps.",
+   "sections": [
+    "Suites",
+    "Tags",
+    "Coverage by feature",
+    "Gaps"
+   ],
+   "facts": [
+    "tests"
+   ],
+   "coverage": "test_files",
+   "audience": "engineers"
+  },
+  {
+   "id": "running-tests",
+   "title": "Running the tests",
+   "path": "docs/qa/running-tests.md",
+   "archetypes": [
+    "qa-automation"
+   ],
+   "purpose": "Local runs, environments/URLs, browsers and devices, parallelism, CI, reports.",
+   "sections": [
+    "Local run",
+    "Environments and URLs",
+    "Browsers and devices",
+    "Parallelism",
+    "CI pipeline",
+    "Reports"
+   ],
+   "facts": [
+    "commands",
+    "ci",
+    "env_vars"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "writing-tests",
+   "title": "Writing new tests",
+   "path": "docs/qa/writing-tests.md",
+   "archetypes": [
+    "qa-automation"
+   ],
+   "purpose": "Conventions, locator strategy, test data, assertions and the review checklist.",
+   "sections": [
+    "Conventions",
+    "Locator strategy",
+    "Test data",
+    "Assertions",
+    "Review checklist"
+   ],
+   "facts": [
+    "page_objects",
+    "tests"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "test-data",
+   "title": "Test data management",
+   "path": "docs/qa/test-data.md",
+   "archetypes": [
+    "qa-automation"
+   ],
+   "purpose": "Data sources, accounts/roles, seeding and cleanup, sensitive data rules.",
+   "sections": [
+    "Sources",
+    "Accounts and roles",
+    "Seeding and cleanup",
+    "Sensitive data"
+   ],
+   "facts": [
+    "env_vars",
+    "tests"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "flaky-tests",
+   "title": "Flaky test policy",
+   "path": "docs/qa/flaky-tests.md",
+   "archetypes": [
+    "qa-automation"
+   ],
+   "purpose": "How flakiness is detected, quarantined, fixed and owned.",
+   "sections": [
+    "Detection",
+    "Quarantine",
+    "Fixing",
+    "Ownership"
+   ],
+   "facts": [
+    "ci"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "functions-catalog",
+   "title": "Function catalog",
+   "path": "docs/functions/catalog.md",
+   "archetypes": [
+    "azure-functions"
+   ],
+   "purpose": "Every function: trigger, bindings, schedule/route, purpose, idempotency.",
+   "sections": [
+    "Function list",
+    "Triggers",
+    "Bindings",
+    "Schedules and routes"
+   ],
+   "facts": [
+    "azure_functions",
+    "host_config"
+   ],
+   "coverage": "azure_functions",
+   "audience": "engineers"
+  },
+  {
+   "id": "functions-local-dev",
+   "title": "Local development (Azure Functions)",
+   "path": "docs/functions/local-development.md",
+   "archetypes": [
+    "azure-functions"
+   ],
+   "purpose": "Core Tools, Azurite, local.settings.json shape (no secrets), running and debugging each trigger type.",
+   "sections": [
+    "Prerequisites",
+    "local.settings.json",
+    "Running",
+    "Debugging",
+    "Testing triggers"
+   ],
+   "facts": [
+    "azure_functions",
+    "env_vars",
+    "commands"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "functions-settings",
+   "title": "App settings (Azure Functions)",
+   "path": "docs/functions/app-settings.md",
+   "archetypes": [
+    "azure-functions"
+   ],
+   "purpose": "Every app setting and connection: purpose, Key Vault reference, slot stickiness.",
+   "sections": [
+    "App settings",
+    "Connections",
+    "Key Vault references",
+    "Slot settings"
+   ],
+   "facts": [
+    "env_vars",
+    "host_config",
+    "azure_functions"
+   ],
+   "coverage": "env_vars",
+   "audience": "engineers"
+  },
+  {
+   "id": "functions-deployment",
+   "title": "Deployment (Azure Functions)",
+   "path": "docs/functions/deployment.md",
+   "archetypes": [
+    "azure-functions"
+   ],
+   "purpose": "Hosting plan, slots, pipeline, configuration per environment, rollback.",
+   "sections": [
+    "Hosting plan",
+    "Deployment slots",
+    "Pipeline",
+    "Rollback"
+   ],
+   "facts": [
+    "ci",
+    "infra_resources",
+    "host_config"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "functions-reliability",
+   "title": "Reliability (Azure Functions)",
+   "path": "docs/functions/reliability.md",
+   "archetypes": [
+    "azure-functions"
+   ],
+   "purpose": "Retries, poison messages, idempotency, timeouts, scaling and cold starts.",
+   "sections": [
+    "Retries",
+    "Poison messages",
+    "Idempotency",
+    "Timeouts",
+    "Scaling and cold starts"
+   ],
+   "facts": [
+    "azure_functions",
+    "host_config"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "functions-monitoring",
+   "title": "Monitoring (Azure Functions)",
+   "path": "docs/functions/monitoring.md",
+   "archetypes": [
+    "azure-functions"
+   ],
+   "purpose": "Application Insights, useful KQL queries, alerts.",
+   "sections": [
+    "Application Insights",
+    "Log queries",
+    "Alerts"
+   ],
+   "facts": [
+    "azure_functions"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "lambda-catalog",
+   "title": "Lambda function catalog",
+   "path": "docs/functions/lambda-catalog.md",
+   "archetypes": [
+    "aws-lambda"
+   ],
+   "purpose": "Every Lambda: handler, events, timeout/memory, permissions.",
+   "sections": [
+    "Function list",
+    "Events",
+    "Configuration",
+    "Permissions"
+   ],
+   "facts": [
+    "lambda_functions"
+   ],
+   "coverage": "lambda_functions",
+   "audience": "engineers"
+  },
+  {
+   "id": "lambda-deployment",
+   "title": "Deployment (Lambda)",
+   "path": "docs/functions/lambda-deployment.md",
+   "archetypes": [
+    "aws-lambda"
+   ],
+   "purpose": "Packaging, stages, IaC tool, rollback, monitoring.",
+   "sections": [
+    "Packaging",
+    "Stages",
+    "Pipeline",
+    "Rollback",
+    "Monitoring"
+   ],
+   "facts": [
+    "ci",
+    "infra_resources"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "infra-overview",
+   "title": "Infrastructure overview",
+   "path": "docs/infrastructure/overview.md",
+   "archetypes": [
+    "infrastructure",
+    "azure-functions",
+    "aws-lambda"
+   ],
+   "purpose": "Resources, environments, state, modules \u2014 generated from the IaC.",
+   "sections": [
+    "Resources",
+    "Environments",
+    "State management",
+    "Modules"
+   ],
+   "facts": [
+    "infra_resources"
+   ],
+   "coverage": "infra_resources",
+   "audience": "engineers"
+  },
+  {
+   "id": "infra-operations",
+   "title": "Infrastructure operations",
+   "path": "docs/infrastructure/operations.md",
+   "archetypes": [
+    "infrastructure"
+   ],
+   "purpose": "Plan/apply, drift, rollback, secrets and cost.",
+   "sections": [
+    "Plan and apply",
+    "Drift",
+    "Rollback",
+    "Secrets",
+    "Cost"
+   ],
+   "facts": [
+    "infra_resources",
+    "ci"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "library-usage",
+   "title": "Library usage",
+   "path": "docs/library/usage.md",
+   "archetypes": [
+    "library"
+   ],
+   "purpose": "Installation, usage examples, public API, versioning and compatibility.",
+   "sections": [
+    "Installation",
+    "Usage examples",
+    "Public API",
+    "Versioning",
+    "Compatibility"
+   ],
+   "facts": [
+    "public_api"
+   ],
+   "coverage": "public_api",
+   "audience": "engineers"
+  },
+  {
+   "id": "release-process",
+   "title": "Release process",
+   "path": "docs/library/releasing.md",
+   "archetypes": [
+    "library",
+    "cli"
+   ],
+   "purpose": "Versioning scheme, changelog, publishing steps.",
+   "sections": [
+    "Versioning",
+    "Changelog",
+    "Publishing"
+   ],
+   "facts": [
+    "ci",
+    "commands"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "cli-reference",
+   "title": "CLI reference",
+   "path": "docs/cli/reference.md",
+   "archetypes": [
+    "cli"
+   ],
+   "purpose": "Every command and option with examples and exit codes.",
+   "sections": [
+    "Commands",
+    "Options",
+    "Exit codes",
+    "Examples"
+   ],
+   "facts": [
+    "cli_commands"
+   ],
+   "coverage": "cli_commands",
+   "audience": "engineers"
+  },
+  {
+   "id": "pipeline-catalog",
+   "title": "Pipeline catalog",
+   "path": "docs/data/pipelines.md",
+   "archetypes": [
+    "data-pipeline"
+   ],
+   "purpose": "Every pipeline/DAG/model: schedule, sources, sinks, lineage, data quality checks.",
+   "sections": [
+    "Pipelines",
+    "Schedules",
+    "Sources and sinks",
+    "Lineage",
+    "Data quality"
+   ],
+   "facts": [
+    "pipelines"
+   ],
+   "coverage": "pipelines",
+   "audience": "engineers"
+  },
+  {
+   "id": "mobile-release",
+   "title": "Mobile build and release",
+   "path": "docs/mobile/build-and-release.md",
+   "archetypes": [
+    "mobile"
+   ],
+   "purpose": "Build variants, signing, store release, device support.",
+   "sections": [
+    "Build variants",
+    "Signing",
+    "Store release",
+    "Device support"
+   ],
+   "facts": [
+    "commands",
+    "ci"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "jobs-catalog",
+   "title": "Background jobs",
+   "path": "docs/operations/jobs.md",
+   "archetypes": [
+    "worker",
+    "azure-functions",
+    "aws-lambda"
+   ],
+   "purpose": "Jobs, consumers, queues/topics, schedules, retries.",
+   "sections": [
+    "Jobs and consumers",
+    "Queues and topics",
+    "Schedules",
+    "Retries"
+   ],
+   "facts": [
+    "queues",
+    "azure_functions"
+   ],
+   "coverage": null,
+   "audience": "engineers"
+  },
+  {
+   "id": "service-catalog",
+   "title": "Service catalog",
+   "path": "docs/architecture/services.md",
+   "archetypes": [
+    "microservices"
+   ],
+   "purpose": "Every service: purpose, owner, interfaces, dependencies, how to run alone.",
+   "sections": [
+    "Services",
+    "Interfaces",
+    "Dependencies",
+    "Ownership"
+   ],
+   "facts": [
+    "projects",
+    "endpoints"
+   ],
+   "coverage": "projects",
+   "audience": "engineers"
+  }
+ ]
+}

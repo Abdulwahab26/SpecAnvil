@@ -61,7 +61,7 @@ def fetch_grammars(langs: list[str]) -> dict:
         cache = None
     return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
             "cache": cache}
-PARSER_VERSION = "3"  # bump to force a full re-index after parser changes
+PARSER_VERSION = "4"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -244,11 +244,79 @@ def _parse_regex(source: str, lang: str) -> FileParse:
     return FileParse(language=lang, parser="regex", symbols=symbols, imports=imports)
 
 
+# CommonJS / prototype-style definitions that tree-sitter's structure view does not report:
+#   Layer.prototype.handle_request = function (...) {   proto.handle = function handle(...) {
+#   exports.render = function (...) {                   module.exports = function createApp() {
+_JS_ASSIGN_RX = re.compile(
+    r"^([ \t]*)((?:[A-Za-z_$][\w$]*\.)*(?:prototype\.)?[A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b[^(]*\(", re.M)
+
+
+def _block_end(source: str, start: int) -> int | None:
+    """Index of the brace closing the first '{' at/after start (string- and comment-aware enough for JS)."""
+    i = source.find("{", start)
+    if i < 0:
+        return None
+    depth, n, quote = 0, len(source), None
+    while i < n:
+        c = source[i]
+        if quote:
+            if c == "\\":
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+        elif c in "\"'`":
+            quote = c
+        elif c == "/" and source.startswith("//", i):
+            j = source.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        elif c == "/" and source.startswith("/*", i):
+            j = source.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
+def _js_assignments(source: str, existing: list[Symbol]) -> list[Symbol]:
+    taken = {s.start_line for s in existing}
+    out = []
+    for m in _JS_ASSIGN_RX.finditer(source):
+        target = m.group(2)
+        parts = [p for p in target.split(".") if p not in ("prototype",)]
+        if parts[0] in ("module",) and len(parts) <= 2 and parts[-1] == "exports":
+            parts = ["module.exports"]
+        line = source.count("\n", 0, m.start()) + 1
+        if line in taken:
+            continue
+        end = _block_end(source, m.end())
+        end_line = source.count("\n", 0, end) + 1 if end is not None else line
+        name = parts[-1]
+        parent = ".".join(parts[:-1]) if len(parts) > 1 and parts[0] not in ("exports", "module.exports") else ""
+        if parent in ("proto", "app", "res", "req", "exports", "module"):
+            parent = {"proto": "", "exports": "", "module": ""}.get(parent, parent)
+        sig = source[m.start():source.find("{", m.end()) if source.find("{", m.end()) > 0 else m.end()].strip()
+        out.append(Symbol(name=name, kind="method" if parent or ".prototype." in target else "function",
+                          qualname=f"{parent}.{name}" if parent else name, signature=sig[:240],
+                          start_line=line, end_line=max(line, end_line), parent=parent, exported=target.startswith(("exports.", "module.exports"))))
+    return out
+
+
 def parse_source(rel_path: str, source: str) -> FileParse:
     lang = detect_language(rel_path)
     if lang not in CODE_LANGUAGES:
         return FileParse(language=lang, parser="text")
     parsed = _parse_tree_sitter(source, lang)
+    if parsed is not None and lang in ("javascript", "typescript", "tsx") and "= function" in source:
+        parsed.symbols += _js_assignments(source, parsed.symbols)
+        parsed.symbols.sort(key=lambda x: x.start_line)
     if parsed is not None and (parsed.symbols or len(source) < 200):
         return parsed
     fallback = _parse_regex(source, lang)

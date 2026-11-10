@@ -222,3 +222,98 @@ def test_guard_hook_blocks_secrets(tmp_path):
     assert _guard({"tool_name": "Read", "tool_input": {"file_path": "/r/.env.example"}, "cwd": str(tmp_path)}) == 0
     assert _guard({"tool_name": "Bash", "tool_input": {"command": "cat config/.env"}, "cwd": str(tmp_path)}) == 2
     assert _guard({"tool_name": "Bash", "tool_input": {"command": "pytest -q"}, "cwd": str(tmp_path)}) == 0
+
+
+def _azure_repo(tmp: Path) -> Path:
+    (tmp / "host.json").write_text('{"version": "2.0", "functionTimeout": "00:05:00"}')
+    (tmp / "requirements.txt").write_text("azure-functions\n")
+    (tmp / "local.settings.json").write_text('{"Values": {"DB_URL": "Server=x;Password=secret"}}')
+    (tmp / "function_app.py").write_text(
+        'import os\nimport azure.functions as func\napp = func.FunctionApp()\n\n'
+        '@app.route(route="orders/{id}")\ndef get_order(req):\n    return os.environ["DB_URL"]\n\n'
+        '@app.timer_trigger(schedule="0 0 2 * * *", arg_name="t")\ndef nightly(t):\n    pass\n')
+    subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+    return tmp
+
+
+def test_docs_archetypes_check_register_and_stale(tmp_path):
+    from specforge.docs import DocEngine
+    root = _azure_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    assert not ix.db.execute("SELECT 1 FROM files WHERE path='local.settings.json'").fetchone()  # secret never indexed
+    de = DocEngine(ix)
+    assert "azure-functions" in {a["archetype"] for a in de.facts.archetypes()}
+    ids = {d["id"] for d in de.required()}
+    assert {"functions-catalog", "functions-settings", "configuration", "architecture"} <= ids
+    payload = de.facts_for("functions-catalog")
+    assert set(payload["must_mention"]) == {"get_order", "nightly"}
+
+    doc = root / "docs/functions/catalog.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("# Function catalog\n## Function list\nget_order handles reads. TODO describe the rest.\n")
+    res = de.check("functions-catalog")
+    assert not res["ok"]
+    problems = " | ".join(res["problems"])
+    assert "missing section: Triggers" in problems and "nightly" in problems and "placeholder" in problems
+    assert de.register("functions-catalog")["registered"] is False
+
+    body = ("The function app exposes HTTP and timer functions defined in `function_app.py`. " * 8)
+    doc.write_text("# Function catalog\n" + body + "\n## Function list\n| Name | Trigger |\n|---|---|\n"
+                   "| get_order | HTTP `orders/{id}` |\n| nightly | Timer `0 0 2 * * *` |\n"
+                   "## Triggers\nHTTP and timer.\n## Bindings\nNone beyond triggers.\n"
+                   "## Schedules and routes\nSee table.\n## Open questions\n- TBD: retry policy owner\n")
+    assert de.check("functions-catalog")["ok"], de.check("functions-catalog")
+    assert de.register("functions-catalog", "sonnet")["registered"]
+    assert {r["id"]: r["status"] for r in de.status()}["functions-catalog"] == "fresh"
+
+    f = root / "function_app.py"
+    f.write_text(f.read_text() + '\n@app.queue_trigger(arg_name="m", queue_name="jobs", connection="C")\ndef on_job(m):\n    pass\n')
+    ix.build()
+    de2 = DocEngine(ix)
+    assert {r["id"]: r["status"] for r in de2.status()}["functions-catalog"] == "stale"
+    assert "on_job" in " ".join(de2.check("functions-catalog")["problems"])
+
+
+def test_endpoint_extraction_prefixes_and_handlers(tmp_path):
+    from specforge.facts import Facts
+    (tmp_path / "api.py").write_text(
+        'from fastapi import APIRouter\nrouter = APIRouter(prefix="/items", tags=["items"])\n\n'
+        '@router.get("/")\ndef read_items():\n    return []\n\n@router.post(\n    "/{id}/archive"\n)\n'
+        'def archive(id: int):\n    return id\n')
+    (tmp_path / "Ctl.java").write_text(
+        'package a;\n@RestController\n@RequestMapping("/invoices")\npublic class Ctl {\n'
+        '    @GetMapping("/{id}")\n    public String get(Long id) { return ""; }\n'
+        '    @PostMapping\n    public String issue() { return ""; }\n}\n')
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    eps = {(e["method"], e["path"], e["handler"]) for e in Facts(ix).get("endpoints")}
+    assert ("GET", "/items/", "read_items") in eps
+    assert ("GET", "/invoices/{id}", "Ctl.get") in eps and ("POST", "/invoices/", "Ctl.issue") in eps
+    assert not any(p == "/invoices" and m == "ANY" for m, p, _ in eps)
+
+
+def test_session_dedupe_and_compaction_reset(tmp_path):
+    import time as _t
+
+    from specforge.session import Session, touch_compaction_marker
+    root = make_repo(tmp_path)
+    ix = CodeIndex(root)
+    ix.build()
+    sess = Session(root)
+    first, _ = ix.context_for("create orders validation", 3000, delivered=sess.ledger())
+    assert "def create" in first
+    second, _ = ix.context_for("create orders validation", 3000, delivered=sess.ledger())
+    assert "Already in your context" in second and "def create" not in second   # not paid twice
+    _t.sleep(0.01)
+    touch_compaction_marker(root)                                              # PreCompact hook fired
+    third, _ = ix.context_for("create orders validation", 3000, delivered=sess.ledger())
+    assert "def create" in third
+
+
+def test_focus_excerpt():
+    from specforge.analysis import excerpt
+    body = "def big(x):\n" + "".join(f"    step{i} = {i}\n" for i in range(30)) + "    if coupon_expired(x):\n        raise E\n    return x\n"
+    out, cut = excerpt(body, "coupon")
+    assert cut and "coupon_expired" in out and "def big" in out and "step15" not in out and "… (" in out
+    assert len(out) < len(body) / 3

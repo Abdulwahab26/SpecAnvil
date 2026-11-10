@@ -16,6 +16,7 @@ jobs:
       # Replace with your published package or fork URL
       - run: pip install "specforge @ git+https://github.com/YOUR_GITHUB_USER/specforge"
       - run: specforge drift --strict
+      - run: specforge docs check --strict
       - run: specforge report
       - uses: actions/upload-artifact@v4
         with:

@@ -33,12 +33,14 @@ ROLES = {
     "e2e": "e2e-tester",
     "reviewer": "reviewer",
     "backfill": "ticket-archaeologist",
+    "docs": "doc-writer",
 }
 
 DEFAULTS: dict = {
     "models": {
         "test_planner": "opus",     # deep analysis: strongest reasoning
         "test_executor": "haiku",   # follows explicit milestones: cheap and fast
+        "docs": "sonnet",           # long-form writing from extracted facts
     },
     "backfill": {
         "enabled": False,           # opt-in: pulling ticket history is never automatic

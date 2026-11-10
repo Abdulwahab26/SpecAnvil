@@ -22,6 +22,10 @@ What changed (see ADR-3): removed an O(n²) `set()` rebuild in the removal check
 | Text search, ripgrep path | 35–55 ms |
 | Text search, pure Python, no match (full scan) | ~330 ms |
 
+## Head-to-head with jCodeMunch (its own benchmark)
+
+Same pinned repos, same 5 queries, same workflow, tiktoken cl100k: jCodeMunch 17,581 tokens · SpecForge **9,306** default (−47%) · **12,148** with every body in full (−31%). Cold index: express 0.23 s vs 1.72 s, fastapi 1.39 s vs 7.07 s, gin 0.27 s vs 1.56 s. Details and caveats: [COMPARISON.md](COMPARISON.md).
+
 ## Token savings (full-stack-fastapi-template, 13 typical lookups)
 
 ~22k tokens returned vs ~142k whole-file baseline: **84% saved** overall (repo_map 97%, search_symbols 84%, get_symbol 80%, get_context 77%, file_outline 71%).
@@ -32,8 +36,10 @@ Baseline = tokens of the whole files the model would otherwise open (≈4 chars/
 | Metric | All 12 | 9 held-out* |
 |---|---|---|
 | recall@any (symbol in context as body or signature) | 1.00 | 1.00 |
-| recall@full (full body included) | 0.92 | 0.94 |
-| MRR of first expected symbol | 0.78 | 0.76 |
+| recall@full (full body included) | 1.00 | 1.00 |
+| MRR of first expected symbol | 0.88 | 0.83 |
+
+(v0.2 was recall@full 0.92, MRR 0.78; v0.3 added term-coverage ranking, test/example down-ranking and nested-result dedupe.)
 
 \*3 tasks (password reset, pagination, delete users) were used while tuning ranking; the other 9 were written afterwards.
 

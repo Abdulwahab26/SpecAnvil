@@ -25,8 +25,11 @@ from .index import CodeIndex
 from .specs import drift as _drift
 from .specs import headings, list_specs, read_section, specs_root
 from . import profile as _profile
+from .docs import DocEngine
 from . import testing as _testing
 from . import tickets as _tickets
+from . import analysis as _analysis
+from .session import Session
 from .tokens import estimate_tokens
 
 INSTRUCTIONS = """SpecForge code index for this repository. Prefer these tools over reading whole files:
@@ -39,6 +42,7 @@ ROOT = Path(os.environ.get("SPECFORGE_ROOT") or os.environ.get("CLAUDE_PROJECT_D
 mcp = _Server("specforge", instructions=INSTRUCTIONS)
 _ix: CodeIndex | None = None
 _last_refresh = 0.0
+_session = Session(ROOT)
 
 
 def ix() -> CodeIndex:
@@ -94,31 +98,93 @@ def search_symbols(query: str, kind: str | None = None, path_prefix: str | None 
     return _done("search_symbols", text, i.file_tokens(r["path"] for r in rows[:5]))
 
 
-@mcp.tool()
-def get_symbol(ref: str, path: str | None = None, context_lines: int = 0) -> str:
-    """Exact source of one symbol. ref = id from other tools, a name, Class.method, or 'path::Qualname'."""
-    i = ix()
+def _resolve_one(i: CodeIndex, ref: str, path: str | None):
     rows = i.find_symbol(ref, path)
     if not rows:
         raise ToolError(f"Symbol not found: {ref}. Try search_symbols('{ref}') to find the right name or id.")
     if len(rows) > 1 and not path and not str(ref).isdigit():
         exact = [r for r in rows if r["qualname"] == ref]
         if len(exact) != 1:
-            return "Ambiguous; pick an id:\n" + "\n".join(
+            return None, "Ambiguous; pick an id:\n" + "\n".join(
                 f"[{r['id']}] {r['qualname']} ({r['path']}:{r['start_line']})" for r in rows)
         rows = exact
-    r = rows[0]
+    return rows[0], None
+
+
+def _render_symbol(i: CodeIndex, r, context_lines: int, focus: str | None, force: bool,
+                   full: bool = False) -> tuple[str, int]:
+    """Returns (text, baseline). Unchanged bodies already sent this session become a one-line reference."""
+    head = f"{r['path']}:{r['start_line']}-{r['end_line']}  {r['kind']} {r['qualname']}  [{r['id']}]"
+    if not force and not focus and _session.seen(r["id"], r["body_hash"]):
+        _session.avoided(r["tokens"] or 0)
+        return head + "  (already in your context this session, unchanged; force=true to resend)", \
+            i.file_tokens([r["path"]])
     body = i.symbol_source(r, context_lines)
-    text = f"{r['path']}:{r['start_line']}-{r['end_line']}  {r['kind']} {r['qualname']}\n```\n{body}\n```"
-    return _done("get_symbol", text, i.file_tokens([r["path"]]))
+    note = ""
+    if focus:
+        body, cut = _analysis.excerpt(body, focus)
+        if cut:
+            note = f"  (focused on '{focus}'; get_symbol without focus for the full body)"
+    elif not full and (cap := int(load_config(ROOT).get("symbol_max_tokens", 1500))) > 0:
+        body, cut = _analysis.skeleton(body, cap)
+        if cut:
+            note = f"  (large: {r['tokens']} tokens; skeleton shown, nested blocks folded. focus='terms' or full=true for more)"
+        else:
+            _session.mark(r["id"], r["body_hash"])
+    else:
+        _session.mark(r["id"], r["body_hash"])
+    return f"{head}{note}\n```\n{body}\n```", i.file_tokens([r["path"]])
+
+
+@mcp.tool()
+def get_symbol(ref: str, path: str | None = None, context_lines: int = 0, focus: str | None = None,
+               force: bool = False, full: bool = False) -> str:
+    """Exact source of one symbol. ref = id, name, Class.method or 'path::Qualname'. Very large symbols come back
+    as a skeleton (full=true for everything); focus='words' returns the signature and matching lines. Bodies
+    already sent this session return a short reference unless force=true."""
+    i = ix()
+    r, err = _resolve_one(i, ref, path)
+    if err:
+        return err
+    text, base = _render_symbol(i, r, context_lines, focus, force, full)
+    return _done("get_symbol", text, base)
+
+
+@mcp.tool()
+def get_symbols(refs: list[str], focus: str | None = None, force: bool = False, full: bool = False) -> str:
+    """Several symbols in one call (ids or names). Same dedupe and focus rules as get_symbol."""
+    i = ix()
+    parts, files, base = [], set(), 0
+    for ref in refs[:25]:
+        try:
+            r, err = _resolve_one(i, str(ref), None)
+        except ToolError as e:
+            parts.append(str(e))
+            continue
+        if err:
+            parts.append(err)
+            continue
+        text, _ = _render_symbol(i, r, 0, focus, force, full)
+        parts.append(text)
+        files.add(r["path"])
+    out = "\n\n".join(parts)
+    return _done("get_symbols", out, i.file_tokens(files))
 
 
 @mcp.tool()
 def get_context(task: str, budget_tokens: int | None = None) -> str:
-    """Best code for a task within a token budget: full bodies of the most relevant symbols, signatures for the rest."""
+    """Best code for a task within a token budget: full bodies of the most relevant symbols, signatures for the rest.
+    Code already sent this session is referenced, not resent, so the budget goes to new code."""
     i = ix()
-    text, files = i.context_for(task, budget_tokens)
+    text, files = i.context_for(task, budget_tokens, delivered=_session.ledger())
     return _done("get_context", text, i.file_tokens(files))
+
+
+@mcp.tool()
+def hotspots(days: int = 180, limit: int = 20) -> str:
+    """Riskiest functions: complexity (branches) × recent git churn. Use to prioritise reviews, tests, refactors."""
+    i = ix()
+    return json.dumps(_analysis.hotspots(i, days, limit), separators=(",", ":"))
 
 
 @mcp.tool()
@@ -164,12 +230,13 @@ def changed_symbols(base: str = "HEAD") -> str:
 
 
 @mcp.tool()
-def impact_of(path: str) -> str:
-    """Files that likely depend on this file (by imports). Use before changing shared code."""
+def impact_of(path: str, depth: int = 2) -> str:
+    """Files that depend on this file through imports, transitively up to `depth` hops, tests flagged."""
     i = ix()
-    deps = i.dependents(path)
-    text = "\n".join(deps) or "No dependents found by imports."
-    return _done("impact_of", text, i.file_tokens(deps))
+    deps = _analysis.impact(i, path, depth)
+    text = "\n".join(f"{'  ' * (d['hops'] - 1)}{d['path']}" + ("  [test]" if d["test"] else "") for d in deps) \
+        or "No dependents found by imports."
+    return _done("impact_of", text, i.file_tokens(d["path"] for d in deps))
 
 
 @mcp.tool(name="list_specs")
@@ -227,8 +294,11 @@ def reindex(full: bool = False) -> str:
 
 @mcp.tool()
 def token_savings() -> str:
-    """How many tokens SpecForge saved versus reading whole files, per tool."""
-    return json.dumps(ix().savings(), indent=1)
+    """How many tokens SpecForge saved versus reading whole files, per tool, plus this session's dedupe savings."""
+    data = ix().savings()
+    data["this_session"] = {"resends_avoided": _session.resent_avoided, "tokens_not_resent": _session.tokens_avoided,
+                            "symbols_in_context": len(_session.delivered), "tool_tier": TIER}
+    return json.dumps(data, indent=1)
 
 
 # ----------------------------------------------------------------------------- unit-test planning
@@ -314,10 +384,82 @@ def backfill_progress(done: list[str] | None = None, failed: dict[str, str] | No
     return json.dumps({**st, "specs_existing": have}, separators=(",", ":"))
 
 
+# ----------------------------------------------------------------------------- documentation
+
+def _docs() -> DocEngine:
+    return DocEngine(ix())
+
+
+@mcp.tool()
+def doc_plan() -> str:
+    """Detected repo archetypes (backend, frontend, qa-automation, azure-functions, aws-lambda, infrastructure,
+    library, cli, data-pipeline, mobile, worker, microservices) and every required document with its status."""
+    de = _docs()
+    return json.dumps({"archetypes": de.facts.archetypes(), "documents": de.status()}, separators=(",", ":"))
+
+
+@mcp.tool()
+def doc_facts(doc_id: str, max_items: int = 120) -> str:
+    """Everything needed to write one document: purpose, required sections, audience, locally extracted facts
+    with file:line, and must_mention (items that must appear in the document)."""
+    de = _docs()
+    try:
+        data = de.facts_for(doc_id, max_items)
+    except KeyError as e:
+        raise ToolError(str(e)) from e
+    text = json.dumps(data, separators=(",", ":"))
+    files = set()
+    for v in data["facts"].values():
+        for item in (v if isinstance(v, list) else []):
+            if isinstance(item, dict):
+                at = str(item.get("at") or item.get("file") or "").split(":")[0]
+                if at:
+                    files.add(at)
+    return _done("doc_facts", text, ix().file_tokens(files))
+
+
+@mcp.tool()
+def doc_check(doc_id: str) -> str:
+    """Completeness check for one document: required sections, every must_mention item present, no placeholders
+    outside 'Open questions', relative links resolve. Fix all problems, then call doc_register."""
+    try:
+        return json.dumps(_docs().check(doc_id))
+    except KeyError as e:
+        raise ToolError(str(e)) from e
+
+
+@mcp.tool()
+def doc_register(doc_id: str, model: str = "") -> str:
+    """Record that a document passed doc_check, with a hash of the facts it describes (it turns 'stale'
+    automatically when those facts change). Refuses if the check fails."""
+    try:
+        res = _docs().register(doc_id, model)
+    except KeyError as e:
+        raise ToolError(str(e)) from e
+    if not res.get("registered"):
+        raise ToolError("Not registered; doc_check failed: " + "; ".join(res.get("problems", [])))
+    return json.dumps(res)
+
+
 @mcp.tool()
 def get_profile() -> str:
     """The user's SpecForge profile: model per agent role and ticket backfill preferences."""
     return json.dumps(_profile.effective(ROOT), separators=(",", ":"))
+
+
+# ----------------------------------------------------------------------------- tool tiers
+# Every tool schema costs tokens on every turn. Tiers expose only what a session needs.
+TIERS = {
+    "core": {"repo_map", "get_context", "search_symbols", "file_outline", "get_symbol", "get_symbols",
+             "find_references", "read_spec", "token_savings"},
+}
+TIERS["standard"] = TIERS["core"] | {"search_code", "changed_symbols", "impact_of", "hotspots", "list_specs",
+                                     "spec_drift", "project_profile", "get_profile", "reindex"}
+TIER = (os.environ.get("SPECFORGE_TOOLS") or load_config(ROOT).get("tool_tier") or "full").lower()
+if TIER in TIERS:
+    for _t in list(mcp._tool_manager._tools if hasattr(mcp, "_tool_manager") else []):
+        if _t not in TIERS[TIER]:
+            mcp.remove_tool(_t)
 
 
 def main() -> None:
