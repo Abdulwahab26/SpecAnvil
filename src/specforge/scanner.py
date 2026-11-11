@@ -19,12 +19,19 @@ from pathlib import Path
 
 import pathspec
 
-from .config import DEFAULT_IGNORES, IGNORE_FILE, MAX_FILE_BYTES, SECRET_GLOBS
+from .config import (
+    DEFAULT_IGNORES,
+    IGNORE_FILE,
+    MAX_FILE_BYTES,
+    SECRET_GLOBS,
+    debug_exc,
+)
 
 try:  # pathspec >= 0.12.2 names the git-compatible style "gitignore"
     pathspec.PathSpec.from_lines("gitignore", ["x"])
     _STYLE = "gitignore"
 except Exception:  # noqa: BLE001
+    debug_exc("scanner:27")
     _STYLE = "gitwildmatch"
 
 
@@ -144,11 +151,6 @@ def iter_candidates(root: Path, relaxed: bool = False) -> list[Candidate]:
         out.append(Candidate(rel, st.st_size, st.st_mtime_ns))
     out.sort(key=lambda c: c.path)
     return out
-
-
-def iter_files(root: Path) -> list[str]:
-    """Back-compat helper: paths only."""
-    return [c.path for c in iter_candidates(root)]
 
 
 def looks_binary(data: bytes) -> bool:

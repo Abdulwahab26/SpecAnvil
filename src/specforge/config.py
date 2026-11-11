@@ -38,11 +38,6 @@ SECRET_GLOBS = [
 ]
 
 # Languages we parse only as text (no symbols).
-DATA_LANGUAGES = {
-    "json", "yaml", "toml", "markdown", "xml", "csv", "ini", "properties",
-    "dockerfile", "make", "html", "css", "scss", "less", "sql", "graphql",
-    "proto", "hcl", "bash", "powershell", "gitignore", "requirements",
-}
 
 DEFAULT_CONFIG = {
     "version": 1,
@@ -105,4 +100,18 @@ def discover_root(start: Path | None = None, env: dict | None = None) -> Path:
         if (d / ".git").exists():
             return d
     return cur
+
+
+def debug_exc(where: str) -> None:
+    """Record an error that is deliberately not raised (telemetry, optional features). Silent by default;
+    set SPECFORGE_DEBUG=1 to see each one on stderr with its traceback."""
+    import logging
+    import os
+    log = logging.getLogger("specforge")
+    if os.environ.get("SPECFORGE_DEBUG") and not log.handlers:
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter("specforge debug: %(message)s"))
+        log.addHandler(h)
+        log.setLevel(logging.DEBUG)
+    log.debug("ignored error in %s", where, exc_info=True)
 

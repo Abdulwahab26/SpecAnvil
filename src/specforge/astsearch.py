@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import fnmatch
 
+from .config import debug_exc
 from .index import GENERATED_RX, CodeIndex
 from .parser import local_grammars
 
@@ -17,6 +18,7 @@ try:  # pragma: no cover
     import tree_sitter as ts
     import tree_sitter_language_pack as tslp
 except Exception:  # noqa: BLE001
+    debug_exc("astsearch:19")
     ts = tslp = None
 
 JS = ("javascript", "typescript", "tsx")
@@ -125,6 +127,7 @@ def search(ix: CodeIndex, query: str | None = None, preset: str | None = None, l
             try:
                 compiled[lang] = ts.Query(tslp.get_language(lang), pattern)
             except Exception as e:  # noqa: BLE001 - invalid query for this grammar
+                debug_exc("astsearch:127")
                 errors[lang] = str(e)[:200]
                 compiled[lang] = None
         q = compiled[lang]

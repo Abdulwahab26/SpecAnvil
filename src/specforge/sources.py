@@ -18,6 +18,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from .config import debug_exc
 from .index import CodeIndex
 from .profile import home
 
@@ -67,6 +68,7 @@ def _locate_pkg(name: str, project: Path) -> tuple[Path, str]:
             from importlib.metadata import version
             ver = version(name)
         except Exception:  # noqa: BLE001
+            debug_exc("sources:69")
             ver = "0"
         return d.resolve(), ver
     # Go module cache

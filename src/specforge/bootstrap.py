@@ -76,6 +76,11 @@ def _values(root: Path, cfg: dict, stack: dict) -> dict:
     return {
         "project_name": root.name, "specs_dir": cfg["specs_dir"], "features_dir": features_dir(cfg),
         "templates_dir": cfg.get("templates_dir") or f"{features_dir(cfg)}/_template",
+        "spec_note": ("### OpenSpec\nThis repo uses OpenSpec: living specs in `openspec/specs/`, changes in `openspec/changes/`. "
+                      "OpenSpec's own workflows create, apply and archive changes; the SpecForge workflows enrich them "
+                      "(code map, impact, scenario-to-test coverage, QA and E2E from scenarios) and never create a second "
+                      "spec. Check with `openspec_status`, `openspec_check`, `openspec_coverage`, `openspec_gaps` "
+                      "(via `run_tool`).\n\n") if cfg.get("spec_system") == "openspec" else "",
         "test_cmd": cmds.get("test", "the project's test command " + missing),
         "lint_cmd": cmds.get("lint", "the project's linter " + missing),
         "build_cmd": cmds.get("build", missing), "dev_cmd": cmds.get("dev", "the dev server command " + missing),
@@ -268,7 +273,7 @@ Unit tests: `/sf:test-plan <module>` (planner model) → `/sf:test-run <module>`
 Documentation: `/sf:docs` writes every document this repo type needs (docs model), checked by `specforge docs check`.
 Models per role live in your personal profile: `/sf:profile` or `specforge profile set models.<role> <model>`.
 
-### Code navigation (saves tokens)
+{values.get('spec_note', '')}### Code navigation (saves tokens)
 Use the **specforge** MCP before reading files: `repo_map`, `get_context(task)`, `search_symbols`, `file_outline`,
 `get_symbol`, `find_references`, `read_spec(path, section)`. Read a whole file only when editing most of it.
 SpecForge starts with a small tool set to save tokens. When a command names a tool you don't have, call
@@ -367,15 +372,45 @@ def _merge_settings(root: Path) -> str:
 
 # ---------------------------------------------------------------------------- main entry
 
+OPENSPEC_LIFECYCLE = {"groom", "design", "plan", "fe", "be", "db", "qa", "e2e", "verify", "flow", "ship", "status",
+                      "spec", "backfill", "learn"}
+OPENSPEC_ADAPTER = """> **This repo uses OpenSpec.** OpenSpec's files are the source of truth; never create a parallel spec.
+> - A *feature* is an OpenSpec **change** in `openspec/changes/<change>/`. `requirements.md` here means the change's
+>   `proposal.md` plus its delta specs `specs/<capability>/spec.md` (`## ADDED|MODIFIED|REMOVED Requirements`,
+>   `### Requirement:` with SHALL/MUST text, `#### Scenario:` with **WHEN** / **THEN**). Acceptance criteria are the scenarios.
+> - `design.md` and `tasks.md` are the change's own files; tasks stay a numbered checkbox list (`- [ ] 1.1 ...`).
+> - Creating, applying and archiving changes stays with OpenSpec's workflows (propose / apply / archive). This workflow
+>   enriches the change: add a `## Code map` to `proposal.md` listing `` `path::Qualname` `` references, so drift is detected.
+> - Tools: `run_tool("openspec_status")`, `run_tool("openspec_check", {"target": "<change>"})` (must be clean before
+>   you finish), `run_tool("openspec_coverage", {"target": "<change>"})` (scenario -> test), `run_tool("openspec_gaps")`.
+> - Name tests after the scenarios they prove, so coverage is exact.
+
+"""
+
+
+def command_names(cfg: dict) -> list[str]:
+    return COMMANDS + (["baseline"] if cfg.get("spec_system") == "openspec" else [])
+
+
+def command_text(name: str, values: dict, cfg: dict) -> str:
+    """A command asset with values filled in; in OpenSpec mode the lifecycle commands get the OpenSpec mapping."""
+    text = _fill(asset(f"commands/{name}.md"), values)
+    if cfg.get("spec_system") == "openspec" and name in OPENSPEC_LIFECYCLE and text.startswith("---"):
+        head, sep, body = text[3:].partition("\n---\n")
+        text = "---" + head + sep + "\n" + OPENSPEC_ADAPTER + body.lstrip("\n")
+    return text
+
+
 def _bundle(root: Path, values: dict, stack: dict, skills: dict[str, str], connectors: list[str],
-            keep: set[str] | None = None):
+            keep: set[str] | None = None, cfg: dict | None = None):
     """Provider-neutral content (see providers.py) built from the same assets Claude Code gets."""
     from . import providers as P
     from .connectors import catalog
     from .profile import effective, role_of_agent
     cmds = []
-    for c in COMMANDS:
-        meta, body = P.split_frontmatter(_fill(asset(f"commands/{c}.md"), values))
+    cfg = cfg if cfg is not None else load_config(root)
+    for c in command_names(cfg):
+        meta, body = P.split_frontmatter(command_text(c, values, cfg))
         cmds.append(P.Command(c, meta.get("description", c), meta.get("argument-hint", ""), body))
     agents = []
     for f in sorted(asset_dir("agents").iterdir(), key=lambda x: x.name):
@@ -400,6 +435,15 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
     cfg = load_config(root)
     tools = P.resolve(root, agents, cfg.get("agents"))
     cfg["agents"] = tools
+    from . import openspec as _os
+    if cfg.get("spec_system") == "openspec" or (not cfg.get("spec_system") and _os.find(root)):
+        # an OpenSpec project: work inside its folders instead of creating a second spec system
+        cfg["spec_system"] = "openspec"
+        if cfg.get("specs_dir", "specs") == "specs" and not (root / "specs").exists():
+            cfg["specs_dir"] = "openspec/specforge"
+        cfg["features_dir"] = "openspec/changes"
+        cfg["templates_dir"] = f"{cfg['specs_dir']}/templates"
+        cfg["extra_spec_dirs"] = ["openspec/specs"]
     if "kiro" in tools and not cfg.get("features_dir"):  # Kiro keeps feature specs in its own layout
         cfg["features_dir"] = ".kiro/specs"
         cfg.setdefault("templates_dir", f"{cfg.get('specs_dir', 'specs')}/templates")
@@ -442,7 +486,8 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
     plan.write(f"{sd}/README.md", _fill(asset("skills/spec-writing/SKILL.md").split("---", 2)[2].strip() + "\n", values))
     for m in ix.modules()[:max_modules]:
         plan.write(f"{sd}/modules/{_slug(m['m'])}.md", _module_md(ix, m["m"]))
-    for t in ("requirements", "design", "tasks", "test-cases"):
+    # OpenSpec has its own proposal / design / tasks formats: only the QA test-case template is added there
+    for t in (("test-cases",) if cfg.get("spec_system") == "openspec" else ("requirements", "design", "tasks", "test-cases")):
         plan.write(f"{values['templates_dir']}/{t}.md", _fill(asset(f"specs/_template/{t}.md"), values))
 
     # skills: static + generated per project (refreshed on every run so upgrades flow through)
@@ -465,17 +510,28 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
         keep_skills.add("backend-patterns")
 
     if "claude" in tools:
-        for c in COMMANDS:
-            plan.write(f".claude/commands/sf/{c}.md", _fill(asset(f"commands/{c}.md"), values), overwrite=True)
+        for c in command_names(cfg):
+            plan.write(f".claude/commands/sf/{c}.md", command_text(c, values, cfg), overwrite=True)
         for rel, content in render_agents(root, values).items():
             plan.write(rel, content, overwrite=True)
         for name, content in skills.items():
             plan.write(f".claude/skills/{name}/SKILL.md", content, overwrite=name not in keep_skills)
 
     # every other AI coding tool in use: the same content in that tool's own formats
-    other_files = P.render(root, tools, _bundle(root, values, stack, skills, connectors, keep_skills),
+    other_files = P.render(root, tools, _bundle(root, values, stack, skills, connectors, keep_skills, cfg),
                            _project_md(root, stack, ix, connectors), _conventions_md(conv, stack))
+    from .uninstall import SERVER_FILES
+
+    def _server_names(rel: str, text: str | None) -> set[str]:
+        try:
+            return set((json.loads(text or "{}").get(SERVER_FILES[rel]) or {}))
+        except (json.JSONDecodeError, KeyError):
+            return set()
+    added_servers: dict[str, list[str]] = {}
     for rel, content, mode in other_files:
+        if rel in SERVER_FILES:  # remember which servers SpecForge added, so uninstall leaves the user's own alone
+            before = (root / rel).read_text(encoding="utf-8") if (root / rel).exists() else None
+            added_servers[rel] = sorted(_server_names(rel, content) - _server_names(rel, before))
         plan.write(rel, content, overwrite=(mode == "write"))
 
     if ci:
@@ -495,9 +551,19 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
         cfg["connectors"] = connectors
         save_config(root, cfg)
         plan.actions.append(("update", ".specforge/config.json"))
+        manifest: dict[str, list[str]] = {}
         if "claude" in tools:
             _, added = write_mcp_json(root, connectors)
             plan.actions.append(("update", ".mcp.json"))
+            added_servers[".mcp.json"] = added
+            manifest["claude"] = [f".claude/commands/sf/{c}.md" for c in command_names(cfg)] + list(render_agents(root, values)) + \
+                [f".claude/skills/{n}/SKILL.md" for n in skills] + ["CLAUDE.md", ".claude/settings.json", ".mcp.json"]
+        bundle = _bundle(root, values, stack, skills, connectors, keep_skills, cfg)
+        for t in tools:
+            if t != "claude":
+                manifest[t] = [rel for rel, _, _ in P.render(root, [t], bundle)]
+        from .uninstall import save_manifest
+        save_manifest(root, manifest, added_servers)
         lock_specs(root, ix)
         from .report import write_report
         plan.actions.append(("create", write_report(root, ix).relative_to(root).as_posix()))

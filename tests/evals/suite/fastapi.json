@@ -1,0 +1,135 @@
+{
+ "repo": "fastapi/fastapi@a64dfbb",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "declare a dependency for a path operation",
+   "expected": [
+    "Depends"
+   ]
+  },
+  {
+   "task": "raise an HTTP error with a status code and detail",
+   "expected": [
+    "HTTPException"
+   ]
+  },
+  {
+   "task": "include a router with a prefix into the app",
+   "expected": [
+    "include_router"
+   ]
+  },
+  {
+   "task": "run a task after returning the response",
+   "expected": [
+    "BackgroundTasks",
+    "add_task"
+   ]
+  },
+  {
+   "task": "generate the OpenAPI schema",
+   "expected": [
+    "get_openapi",
+    "openapi"
+   ]
+  },
+  {
+   "task": "serve the Swagger UI docs page",
+   "expected": [
+    "get_swagger_ui_html"
+   ]
+  },
+  {
+   "task": "handle request validation errors",
+   "expected": [
+    "RequestValidationError",
+    "request_validation_exception_handler"
+   ]
+  },
+  {
+   "task": "extract an OAuth2 bearer token from the request",
+   "expected": [
+    "OAuth2PasswordBearer"
+   ]
+  },
+  {
+   "task": "convert a model to JSON-compatible data",
+   "expected": [
+    "jsonable_encoder"
+   ]
+  },
+  {
+   "task": "add a websocket route",
+   "expected": [
+    "websocket",
+    "add_api_websocket_route",
+    "APIWebSocketRoute"
+   ]
+  },
+  {
+   "task": "upload a file in a request",
+   "expected": [
+    "UploadFile",
+    "File"
+   ]
+  },
+  {
+   "task": "register a middleware function on the app",
+   "expected": [
+    "middleware"
+   ]
+  },
+  {
+   "task": "resolve the dependencies of a request",
+   "expected": [
+    "solve_dependencies"
+   ]
+  },
+  {
+   "task": "read an API key from a header",
+   "expected": [
+    "APIKeyHeader"
+   ]
+  },
+  {
+   "task": "define a query parameter with validation",
+   "expected": [
+    "Query"
+   ]
+  },
+  {
+   "task": "define a request body field with validation",
+   "expected": [
+    "Body"
+   ]
+  },
+  {
+   "task": "serialize the response using the response model",
+   "expected": [
+    "serialize_response"
+   ]
+  },
+  {
+   "task": "register a startup or shutdown event handler",
+   "expected": [
+    "on_event"
+   ]
+  },
+  {
+   "task": "HTTP basic authentication credentials",
+   "expected": [
+    "HTTPBasic",
+    "HTTPBasicCredentials"
+   ]
+  },
+  {
+   "task": "create a route for GET requests",
+   "expected": [
+    "get",
+    "api_route",
+    "add_api_route"
+   ]
+  }
+ ]
+}

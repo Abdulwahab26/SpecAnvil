@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .config import debug_exc
 
 
 def _root(args) -> Path:
@@ -94,6 +95,42 @@ def cmd_agents(args) -> int:
     return 0
 
 
+def cmd_openspec(args) -> int:
+    """OpenSpec mode helpers: status | check [target] | coverage [target] | gaps."""
+    from . import openspec as O
+    from .index import CodeIndex
+    root = _root(args)
+    try:
+        if args.action == "status":
+            res = O.status(root)
+        else:
+            ix = CodeIndex(root)
+            ix.build()
+            res = {"check": lambda: O.check(root, ix, args.target), "coverage": lambda: O.coverage(root, ix, args.target, args.limit),
+                   "gaps": lambda: O.gaps(root, ix, args.limit)}[args.action]()
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps(res, indent=1, ensure_ascii=False))
+    return 1 if args.action == "check" and args.strict and res["errors"] else 0
+
+
+def cmd_uninstall(args) -> int:
+    from .uninstall import uninstall
+    try:
+        res = uninstall(_root(args), [t.strip() for t in args.tools.split(",")] if args.tools else None,
+                        dry_run=args.dry_run, purge=args.purge)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    for kind, rel in res["actions"]:
+        print(f"  {kind:<7} {rel}")
+    print(f"\n{'Would remove' if res['dry_run'] else 'Removed'}: {', '.join(res['removed_tools']) or 'nothing'}"
+          + (f" · still set up: {', '.join(res['remaining_tools'])}" if res["remaining_tools"] else "")
+          + " · your specs and docs were left alone")
+    return 0
+
+
 def cmd_tool(args) -> int:
     """CLI bridge to every MCP tool, for agents that can't run local MCP servers (Replit) and for scripts."""
     import os
@@ -118,6 +155,7 @@ def cmd_tool(args) -> int:
     try:
         print(fn(**arguments))
     except Exception as e:  # noqa: BLE001 - ToolError and argument errors are user-facing
+        debug_exc("cli:156")
         print(f"Error: {e}", file=sys.stderr)
         return 1
     return 0
@@ -226,48 +264,87 @@ READ_VERBS = re.compile(r"(^|[;&|]\s*|\s)(cat|less|more|head|tail|bat|grep|rg|aw
                         r"cp|scp|rsync|curl|source|\.|type|Get-Content|nano|vim?|code)\s")
 
 
-def _guard(payload: dict) -> int:
-    """PreToolUse guardrail: deny access to secret files. Exit 2 blocks the tool call in Claude Code."""
-    import os
+def _secret_in_command(cmd: str) -> str | None:
     import shlex
 
-    from .config import load_config
     from .scanner import is_secret
-    if os.environ.get("SPECFORGE_ALLOW_SECRETS") == "1":
-        return 0
-    root = Path(payload.get("cwd") or ".")
-    if (root / ".specforge").exists() and load_config(root).get("guard_secrets") is False:
-        return 0
-    tool = payload.get("tool_name", "")
-    ti = payload.get("tool_input") or {}
-    hit = None
-    if tool in ("Read", "Edit", "Write", "MultiEdit"):
-        fp = str(ti.get("file_path") or "")
-        if fp and is_secret(fp.replace("\\", "/")):
-            hit = fp
-    elif tool == "Grep":
-        for k in ("path", "glob"):
-            v = str(ti.get(k) or "")
-            if v and is_secret(v.replace("\\", "/")):
-                hit = v
-    elif tool == "Bash":
-        cmd = str(ti.get("command") or "")
-        if READ_VERBS.search(" " + cmd):
+    if not READ_VERBS.search(" " + cmd):
+        return None
+    try:
+        tokens = shlex.split(cmd, posix=True)
+    except ValueError:
+        tokens = cmd.split()
+    for t in tokens:
+        if ("/" in t or "." in t) and is_secret(t.rstrip(";|&")):
+            return t
+    return None
+
+
+def _guard_hit(payload: dict) -> tuple[str | None, str]:
+    """(secret path or None, protocol). Understands the three hook payload shapes:
+    Claude Code PreToolUse {tool_name, tool_input}; Cursor {hook_event_name, file_path | command};
+    Copilot preToolUse {toolName, toolArgs}."""
+    from .scanner import is_secret
+
+    def secret(v) -> str | None:
+        v = str(v or "")
+        return v if v and is_secret(v.replace("\\", "/")) else None
+    ev = str(payload.get("hook_event_name") or "")
+    if ev in ("beforeReadFile", "beforeShellExecution", "beforeTabFileRead"):  # Cursor
+        if "command" in payload and ev == "beforeShellExecution":
+            return _secret_in_command(str(payload.get("command") or "")), "cursor"
+        return secret(payload.get("file_path")), "cursor"
+    if "toolName" in payload:  # Copilot
+        args = payload.get("toolArgs") or {}
+        if isinstance(args, str):
             try:
-                tokens = shlex.split(cmd, posix=True)
-            except ValueError:
-                tokens = cmd.split()
-            for t in tokens:
-                if "/" in t or "." in t:
-                    if is_secret(t.rstrip(";|&")):
-                        hit = t
-                        break
-    if hit:
-        print(f"SpecForge guard: access to secret file '{hit}' is blocked. Ask the user for the specific "
-              "non-secret value you need, or have them set SPECFORGE_ALLOW_SECRETS=1 for this session.",
-              file=sys.stderr)
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                args = {}
+        for k in ("filePath", "file_path", "path", "uri", "glob", "includePattern"):
+            hit = secret(args.get(k)) if isinstance(args, dict) else None
+            if hit:
+                return hit, "copilot"
+        cmd = args.get("command") if isinstance(args, dict) else None
+        return (_secret_in_command(str(cmd)) if cmd else None), "copilot"
+    tool = payload.get("tool_name", "")  # Claude Code
+    ti = payload.get("tool_input") or {}
+    if tool in ("Read", "Edit", "Write", "MultiEdit"):
+        return secret(ti.get("file_path")), "claude"
+    if tool == "Grep":
+        return secret(ti.get("path")) or secret(ti.get("glob")), "claude"
+    if tool == "Bash":
+        return _secret_in_command(str(ti.get("command") or "")), "claude"
+    return None, "claude"
+
+
+def _guard(payload: dict) -> int:
+    """Secret-file guard for Claude Code, Cursor and Copilot hooks. Denies in each tool's own protocol:
+    exit code 2 (Claude Code, Cursor) plus a JSON decision on stdout (Cursor `permission`, Copilot
+    `permissionDecision`)."""
+    import os
+
+    from .config import load_config
+    hit, proto = _guard_hit(payload)
+    root = Path(payload.get("cwd") or (payload.get("workspace_roots") or ["."])[0])
+    off = os.environ.get("SPECFORGE_ALLOW_SECRETS") == "1" or \
+        ((root / ".specforge").exists() and load_config(root).get("guard_secrets") is False)
+    if not hit or off:
+        if proto == "cursor":
+            print(json.dumps({"permission": "allow"}))
+        elif proto == "copilot":
+            print("{}")
+        return 0
+    msg = (f"SpecForge guard: '{hit}' looks like a secret file and is blocked. Use the variable names from "
+           ".env.example instead, or set guard_secrets=false in .specforge/config.json to turn this off.")
+    if proto == "cursor":
+        print(json.dumps({"permission": "deny", "user_message": msg, "agent_message": msg}))
         return 2
-    return 0
+    if proto == "copilot":
+        print(json.dumps({"permissionDecision": "deny", "permissionDecisionReason": msg}))
+        return 0
+    print(msg, file=sys.stderr)
+    return 2
 
 
 def cmd_hook(args) -> int:
@@ -287,8 +364,8 @@ def cmd_hook(args) -> int:
     if args.event != "post-edit":
         return 0
     ti = payload.get("tool_input") or {}
-    fp = ti.get("file_path") or ti.get("path")
-    root = Path(payload.get("cwd") or ".").resolve()
+    fp = ti.get("file_path") or ti.get("path") or payload.get("file_path")  # Claude Code | Cursor afterFileEdit
+    root = Path(payload.get("cwd") or (payload.get("workspace_roots") or ["."])[0]).resolve()
     if not fp:
         return 0
     p = Path(fp)
@@ -428,7 +505,7 @@ def cmd_embed(args) -> int:
     try:
         res = semantic.build(ix, progress=lambda d, t: print(f"\r  embedded {d}/{t}", end="", file=sys.stderr))
     except ImportError:
-        print("Semantic search needs the optional extra: pip install 'specforge[semantic]'", file=sys.stderr)
+        print("Semantic search needs the optional extra: pip install 'specforge-ai[semantic]'", file=sys.stderr)
         return 1
     print(file=sys.stderr)
     print(json.dumps(res, indent=2))
@@ -596,6 +673,7 @@ def cmd_doctor(args) -> int:
         t.get_parser("python")
         checks.append(("tree-sitter grammars", True, "downloaded on demand and cached"))
     except Exception as e:  # noqa: BLE001
+        debug_exc("cli:673")
         checks.append(("tree-sitter grammars", False, f"regex fallback will be used ({e.__class__.__name__})"))
     checks.append(("specforge-mcp on PATH", bool(shutil.which("specforge-mcp")),
                    "install with `uv tool install` or `pipx install` so Claude Code can start it"))
@@ -636,6 +714,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("tools", nargs="?", help="comma list for add, e.g. cursor,copilot")
     p.add_argument("--path")
     p.set_defaults(fn=cmd_agents)
+
+    p = sub.add_parser("openspec", help="OpenSpec projects: status | check [target] | coverage [target] | gaps")
+    p.add_argument("action", choices=["status", "check", "coverage", "gaps"])
+    p.add_argument("target", nargs="?", help="a capability name or an active change id")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--strict", action="store_true", help="check: exit 1 when there are errors (for CI)")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_openspec)
+
+    p = sub.add_parser("uninstall", help="remove SpecForge's files for some or all AI tools (specs are kept)")
+    p.add_argument("tools", nargs="?", help="comma list, e.g. cursor,copilot (default: every installed tool)")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--purge", action="store_true", help="also delete .specforge/ (index, config) when nothing is left")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_uninstall)
 
     p = sub.add_parser("tool", help="call any MCP tool from the shell: tool <name> '<json args>' | --list")
     p.add_argument("name", nargs="?")

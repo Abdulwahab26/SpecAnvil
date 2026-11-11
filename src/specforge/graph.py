@@ -211,6 +211,9 @@ from collections import Counter, deque  # noqa: E402
 CALLABLE_KINDS = ("function", "method", "class", "struct")
 
 
+CTOR_NAMES = {"__init__", "constructor", "initialize", "__construct", "init", "__new__"}
+
+
 class CodeGraph:
     """Resolves call edges by name with scope preference: same file > imported files > unique name."""
 
@@ -223,22 +226,50 @@ class CodeGraph:
         for sid, s in self.sym.items():
             if s["kind"] in CALLABLE_KINDS:
                 self.by_name[s["name"]].append(sid)
+        # calling a class runs its constructor: link Foo(...) / new Foo(...) to Foo.__init__ / constructor / Foo.Foo
+        classes = {(s["path"], s["qualname"]): sid for sid, s in self.sym.items()
+                   if s["kind"] in ("class", "struct")}
+        self.ctor: dict[int, int] = {}
+        self.ctor_owner: dict[int, int] = {}
+        for sid, s in self.sym.items():
+            if s["kind"] in ("function", "method") and s["parent"]:
+                owner = classes.get((s["path"], s["parent"]))
+                if owner is not None and (s["name"] in CTOR_NAMES or s["name"] == self.sym[owner]["name"]):
+                    self.ctor.setdefault(owner, sid)
+                    self.ctor_owner[sid] = owner
         self.deps: dict[str, set] = defaultdict(set)
         self.rdeps: dict[str, set] = defaultdict(set)
         for r in db.execute("SELECT src, dst FROM file_deps"):
             self.deps[r[0]].add(r[1])
             self.rdeps[r[1]].add(r[0])
 
-    def resolve(self, caller_path: str, callee: str, recv: str = "") -> list[int]:
+    def resolve(self, caller_path: str, callee: str, recv: str = "", caller_parent: str = "") -> list[int]:
+        res = self._resolve(caller_path, callee, recv, caller_parent)
+        return res + [self.ctor[c] for c in res if c in self.ctor] if res else res
+
+    def _resolve(self, caller_path: str, callee: str, recv: str = "", caller_parent: str = "") -> list[int]:
         cands = self.by_name.get(callee, [])
         if not cands:
             return []
+        if recv in ("self", "this", "cls", "me") and caller_parent:  # a method on the caller's own class
+            own = [c for c in cands if self.sym[c]["path"] == caller_path and self.sym[c]["parent"] == caller_parent]
+            if own:
+                return own[:1]
+        if recv == "&":  # a function passed as a value: only a function defined in the same file
+            return [c for c in cands if self.sym[c]["path"] == caller_path
+                    and self.sym[c]["kind"] in ("function", "method")][:1]
         if recv and recv not in ("self", "this", "cls", "super", "base", "me"):
             # receiver names a module/file (crud.create_user) or a class (Order.create): prefer that target
             hit = [c for c in cands if PurePosixPath(self.sym[c]["path"]).stem == recv
                    or self.sym[c]["parent"] == recv or self.sym[c]["parent"].endswith("." + recv)]
             if hit:
                 return hit[:1]
+            # the receiver is an imported module that re-exports the function (facade modules, __init__ files)
+            mods = [f for f in self.deps.get(caller_path, ()) if PurePosixPath(f).stem == recv
+                    or (PurePosixPath(f).stem in ("__init__", "index", "mod") and PurePosixPath(f).parent.name == recv)]
+            via = [c for c in cands if any(self.sym[c]["path"] in self.deps.get(m, ()) for m in mods)]
+            if via:
+                return via[:1]
         same = [c for c in cands if self.sym[c]["path"] == caller_path]
         if same:
             return same[:1]
@@ -250,7 +281,8 @@ class CodeGraph:
     def edges(self):
         """Resolved (caller_id, callee_id) pairs."""
         for r in self.ix.db.execute("SELECT caller_id, path, callee, recv FROM calls WHERE caller_id IS NOT NULL"):
-            for t in self.resolve(r["path"], r["callee"], r["recv"] or ""):
+            parent = self.sym[r["caller_id"]]["parent"] if r["caller_id"] in self.sym else ""
+            for t in self.resolve(r["path"], r["callee"], r["recv"] or "", parent):
                 if t != r["caller_id"]:
                     yield r["caller_id"], t
 
@@ -258,7 +290,7 @@ class CodeGraph:
         s = self.sym[sid]
         out = []
         for r in self.ix.db.execute("SELECT callee, line, recv FROM calls WHERE caller_id=?", (sid,)):
-            for t in self.resolve(s["path"], r["callee"], r["recv"] or ""):
+            for t in self.resolve(s["path"], r["callee"], r["recv"] or "", s["parent"]):
                 if t != sid:
                     out.append((t, r["line"]))
         return out
@@ -268,8 +300,11 @@ class CodeGraph:
         out = []
         for r in self.ix.db.execute("SELECT caller_id, path, line, recv FROM calls WHERE callee=? AND caller_id IS NOT NULL",
                                     (s["name"],)):
-            if sid in self.resolve(r["path"], s["name"], r["recv"] or "") and r["caller_id"] != sid:
+            parent = self.sym[r["caller_id"]]["parent"] if r["caller_id"] in self.sym else ""
+            if sid in self.resolve(r["path"], s["name"], r["recv"] or "", parent) and r["caller_id"] != sid:
                 out.append((r["caller_id"], r["line"]))
+        if sid in self.ctor_owner:  # a constructor is called wherever its class is instantiated
+            out += [c for c in self.callers(self.ctor_owner[sid]) if c[0] != sid and c not in out]
         return out
 
     def label(self, sid: int) -> str:

@@ -6,26 +6,26 @@ jCodeMunch (jgravelle/jcodemunch-mcp, measured at v1.108.431) is the most mature
 
 Workflow per query: `search_symbols` (top 5) → fetch the top 3 symbols. 5 queries × 3 repos = 15 lookups. Tokens: tiktoken `cl100k_base`, counted on the text the server returns. Session dedupe **off**: every lookup measured fresh.
 
-| Repo (pinned commit) | jCodeMunch | SpecForge 0.6 |
+| Repo (pinned commit) | jCodeMunch | SpecForge 0.8 |
 |---|---|---|
-| expressjs/express `1faf228` | — | 1,800 |
-| fastapi/fastapi `a64dfbb` | — | 2,604 |
-| gin-gonic/gin `75ccf94` | — | 1,520 |
-| **Total (15 lookups)** | **17,581** | **5,924 (−66%)** |
+| expressjs/express `1faf228` | — | 2,005 |
+| fastapi/fastapi `a64dfbb` | — | 2,983 |
+| gin-gonic/gin `75ccf94` | — | 1,811 |
+| **Total (15 lookups)** | **17,581** | **6,799 (−61%)** |
 
-Unchanged from 0.5. 0.4: 6,086 (−65%). 0.3: 9,306. Adding config keys and documentation sections to the index in 0.5 did not move any of the 15 picks onto non-code results.
+0.6 was 5,924 (−66%): since 0.8 each search result carries the symbol's doc comment (Go, Java and JavaScript had none before), which costs ~13% more tokens on this benchmark and lifted multi-repo retrieval from 89% to 96% found. 0.4: 6,086. 0.3: 9,306. Adding config keys and documentation sections to the index in 0.5 did not move any of the 15 picks onto non-code results.
 
 ### Top-3 picks by hand (the benchmark doesn't score relevance)
 
-| Query | jCodeMunch | SpecForge 0.5 |
+| Query | jCodeMunch | SpecForge 0.8 |
 |---|---|---|
 | express · router route handler | `Route`, `debug`, `Router` (variables) | `Route._handles_method`, `Layer.handle_request`, `Layer.handle_error` |
-| express · param bind | `mergeParams`, `paramCallback`, `decode_param` | `app.param`, `req.param`, `paramCallback` |
-| fastapi · middleware | `middleware`, a test helper, `AsyncExitStackMiddleware` | `FastAPI.middleware`, `AsyncExitStackMiddleware`, its `__init__` |
+| express · param bind | `mergeParams`, `paramCallback`, `decode_param` | `app.param`, `paramCallback`, `decode_param` |
+| fastapi · middleware | `middleware`, a test helper, `AsyncExitStackMiddleware` | `FastAPI.middleware`, `AsyncExitStackMiddleware.__init__`, `FastAPI.build_middleware_stack` |
 | fastapi · request response | `request_response`, `app`, `http_exception_handler` | `request_response`, 2 test helpers |
 | gin · router route handler | `staticFileHandler`, `createStaticHandler`, `DELETE` | `RouterGroup.handle`, `RouterGroup.Handle`, `RouterGroup.combineHandlers` |
-| gin · middleware | 3 test functions | `Use`, `RouterGroup.Use`, `Engine.Use` |
-| gin · param bind | `param` (constant), `BindUnmarshaler`, `countParams` | `Context.Param`, `Param` (struct), `Context.AddParam` |
+| gin · middleware | 3 test functions | `Use`, `Engine.Use`, `RouterGroup.Use` |
+| gin · param bind | `param` (constant), `BindUnmarshaler`, `countParams` | `Context.Param`, `Param` (struct), `Params.ByName` |
 
 Both tools mostly land on framework internals. SpecForge's picks are more often the dispatch and registration code itself, and Go methods are receiver-qualified. One query (fastapi · request response) is weaker for SpecForge.
 
@@ -33,7 +33,9 @@ Both tools mostly land on framework internals. SpecForge's picks are more often 
 
 | Eval | Metric | Result |
 |---|---|---|
-| 12 natural-language tasks → `get_context` (4k budget) | recall of needed symbols / MRR | **1.00 / 0.88** (CI fails below 0.95 / 0.75) |
+| 12 natural-language tasks → `get_context` (4k budget), one repo | recall of needed symbols / MRR | **1.00 / 0.86** (CI fails below 0.95 / 0.75) |
+| 74 more tasks on gin (Go), express (JavaScript), fastapi (Python library), spring-petclinic (Java) | needed symbol in context / MRR | **0.96 / 0.72** (CI fails below 0.90 / 0.60); per repo: express 1.00 / 0.88, gin 1.00 / 0.60, petclinic 1.00 / 0.79, fastapi 0.85 / 0.64 |
+| Static call graph vs execution (751 call pairs traced while running the unit tests) | real calls present in the graph | **0.91** (CI fails below 0.85); dead-code reports contradicted by execution: 0 of 4 |
 | 12 paraphrased tasks (no shared words) → `get_context` | expected symbol in full context | 3/12 keyword-only → **8/12 with local embeddings** |
 | Same paraphrases → `search_symbols` top 5 | hit@5 | lexical 0.08 · hybrid 0.25 · **semantic 0.50** · hybrid+vectors 0.42 |
 
@@ -41,9 +43,9 @@ Both tools mostly land on framework internals. SpecForge's picks are more often 
 
 | Repo | jCodeMunch cold `index --no-ai-summaries` | SpecForge 0.6 cold, through the MCP server (two runs) |
 |---|---|---|
-| express | 1.72 s | **0.27–0.34 s** |
-| fastapi | 7.07 s | **3.44–4.02 s** |
-| gin | 1.56 s | **0.39–0.48 s** |
+| express | 1.72 s | **0.26–0.28 s** |
+| fastapi | 7.07 s | **3.37–3.45 s** |
+| gin | 1.56 s | **0.32–0.39 s** |
 
 SpecForge also builds the call graph, inheritance table and resolved import graph in that time, and in 0.5 indexes twice as many symbols on fastapi (section 4). 0.5 fixed two things that inflated earlier timings: a first `reindex(full=True)` no longer indexes twice, and a full rebuild clears tables once instead of deleting row by row. Incremental refresh on Django (5.6k files): 0.11 s for no changes, 0.29 s for one file.
 
@@ -59,7 +61,7 @@ jCodeMunch's totals include configuration keys (for example 189 from express's `
 
 ## 5. Tools: every jCodeMunch tool mapped
 
-jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94 are listed in its full tier. SpecForge 0.6 has 92 tools, and **every jCodeMunch tool has an implemented equivalent** (no partial or missing rows). Where jCodeMunch has three tools for one question, SpecForge often has one with a parameter, and some jCodeMunch tools are workflow guides that SpecForge ships as slash commands instead of schema.
+jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94 are listed in its full tier. SpecForge 0.8 has 96 tools, and **every jCodeMunch tool has an implemented equivalent** (no partial or missing rows). Where jCodeMunch has three tools for one question, SpecForge often has one with a parameter, and some jCodeMunch tools are workflow guides that SpecForge ships as slash commands instead of schema.
 
 **Search and retrieval**
 
@@ -140,8 +142,8 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 | Surface | jCodeMunch | SpecForge 0.6 |
 |---|---|---|
 | Default | 6 router tools, ~1,050 tokens | **`lite`: 6 tools, ~790 tokens** (`repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`) |
-| Mid | — | `core` 11 tools ~1,200 · `standard` 32 ~2,960 · `analysis` 62 ~5,450 |
-| Everything | 94 tools, ~28,142 tokens | **92 tools, ~7,870 tokens** |
+| Mid | — | `core` 11 tools ~1,200 · `standard` 36 ~3,220 · `analysis` 66 ~5,700 |
+| Everything | 94 tools, ~28,142 tokens | **96 tools, ~8,120 tokens** |
 
 Measured as tiktoken `cl100k_base` over each tool's name, description and input schema. 0.6 strips pydantic's auto-generated titles and collapses `Optional[X]` to `X` in advertised schemas (arguments are still validated against the Python signatures), which cut the full surface from ~10.2k to ~7.9k tokens. Switching tiers mid-session sends the standard `notifications/tools/list_changed`; because some clients don't refresh on it yet, `run_tool` reaches any tool regardless.
 
@@ -172,7 +174,7 @@ Every engineering gap from earlier comparisons (tool coverage, symbol counts, cu
 
 ## What SpecForge adds beyond a code index
 
-- **−66% tokens** on jCodeMunch's own benchmark, **2–6× faster** cold indexing including graph building, more symbols on two of the three benchmark repos, a **24% smaller default** tool surface and a **72% smaller full** surface.
+- **−61% tokens** on jCodeMunch's own benchmark, **2–6× faster** cold indexing including graph building, more symbols on two of the three benchmark repos, a **24% smaller default** tool surface and a **72% smaller full** surface.
 - Features jCodeMunch doesn't have: route → handler / event / DI flow edges, entry points, HTTP-route mapping of traces, trace latency in risk scores, validated handoffs checked against the index, regret rules applied automatically to `get_context`, Go implicit-interface implementations, config keys and doc sections as fetchable symbols, `.sfpack` offline pack sharing.
 - **Programmatic enforcement:** server-side session dedupe, secret guard hook, schema-validated test plans, test-verified milestones, documentation completeness gate, local-only guarantees with tests.
 - **MIT licence** (jCodeMunch: free for non-commercial use; commercial licences $79–$1,999 per its PyPI page).

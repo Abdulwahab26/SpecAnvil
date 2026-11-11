@@ -21,7 +21,7 @@ import re
 import time
 from collections import Counter, defaultdict
 
-from .config import load_config, save_config
+from .config import debug_exc, load_config, save_config
 from .index import STOPWORDS, CodeIndex, split_terms, stem
 
 SCHEMA = """
@@ -84,11 +84,13 @@ def log_call(ix: CodeIndex, session: str, tool: str, args: dict, out: str) -> No
                 try:
                     hit = ix.find_symbol(str(ref))
                 except Exception:  # noqa: BLE001
+                    debug_exc("regret:86")
                     hit = []
                 rows.append((_now(), session, tool, hit[0]["id"] if hit else None, str(ref)[:200]))
             ix.db.executemany("INSERT INTO fetch_log VALUES(?,?,?,?,?)", rows)
             ix.db.commit()
     except Exception:  # noqa: BLE001 - telemetry must never break a tool call
+        debug_exc("regret:91")
         pass
 
 

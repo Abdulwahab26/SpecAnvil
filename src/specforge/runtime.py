@@ -21,6 +21,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+from .config import debug_exc
 from .index import CodeIndex
 
 SCHEMA = """
@@ -131,6 +132,7 @@ class _Mapper:
                 for e in Facts(self.ix).get("endpoints"):
                     self._routes[(e["method"].upper(), e["path"].rstrip("/") or "/")] = e
             except Exception:  # noqa: BLE001 - endpoints are best-effort
+                debug_exc("runtime:133")
                 pass
         return self._routes
 

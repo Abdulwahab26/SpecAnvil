@@ -4,6 +4,7 @@ One provider-neutral bundle (rules, lifecycle commands, role agents, skills, MCP
 
   tool      always-on rules            commands / workflows            role agents              skills                  MCP config
   claude    CLAUDE.md                  .claude/commands/sf/*.md        .claude/agents/*.md      .claude/skills          .mcp.json
+            (+ hooks: secret guard, re-index; Cursor gets .cursor/hooks.json, Copilot .github/hooks/specforge.json)
   copilot   AGENTS.md (+ pointer in    .github/prompts/sf-*.prompt.md  .github/agents/          .github/skills          .vscode/mcp.json ("servers")
             .github/copilot-instructions.md)                           sf-*.agent.md
   cursor    AGENTS.md                  .cursor/commands/sf-*.md        (roles live in commands) .cursor/rules/*.mdc     .cursor/mcp.json
@@ -222,7 +223,7 @@ Workflow: {flow}.
 - whole chain for one ticket: {how('flow')}; small change: {how('spec')}; board: {how('status')}
 - unit tests: {how('test-plan')} then {how('test-run')}; docs: {how('docs')}; ticket history: {how('backfill')}
 
-### Code navigation (saves tokens)
+{v.get('spec_note', '')}### Code navigation (saves tokens)
 {chr(10).join(nav)}
 
 ### Commands
@@ -297,6 +298,33 @@ def mcp_files(root: Path, tool: str, servers: dict) -> list[tuple[str, str, str]
     if tool == "augment":  # no project-level MCP file: an import file for Settings > MCP > Import from JSON
         conf = {k: {kk: vv for kk, vv in v.items() if kk != "env"} for k, v in {**sf, **others}.items()}
         return [(".specforge/mcp/augment-import.json", json.dumps({"mcpServers": conf}, indent=2) + "\n", "write")]
+    return []
+
+
+# ---------------------------------------------------------------------------- hooks (programmatic guard rails)
+
+def hook_files(root: Path, tool: str) -> list[tuple[str, str, str]]:
+    """Secret-file guard (and re-index after edits) for the tools that document a hook system."""
+    if tool == "cursor":
+        p = root / ".cursor/hooks.json"
+        data = {}
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                data = {}
+        data.setdefault("version", 1)
+        hooks = data.setdefault("hooks", {})
+        for event, cmd in (("beforeReadFile", "specforge hook guard"), ("beforeShellExecution", "specforge hook guard"),
+                           ("afterFileEdit", "specforge hook post-edit")):
+            lst = hooks.setdefault(event, [])
+            if not any(h.get("command") == cmd for h in lst if isinstance(h, dict)):
+                lst.append({"command": cmd})
+        return [(".cursor/hooks.json", json.dumps(data, indent=2) + "\n", "write")]
+    if tool == "copilot":
+        conf = {"version": 1, "hooks": {"preToolUse": [{"type": "command", "command": "specforge hook guard",
+                                                        "timeoutSec": 10}]}}
+        return [(".github/hooks/specforge.json", json.dumps(conf, indent=2) + "\n", "write")]
     return []
 
 
@@ -420,7 +448,8 @@ def render(root: Path, tools: list[str], b: Bundle, project_md: str = "", conven
                                                rules_block(b, ["replit"], "replit"), root.name), "write"))
     seen: set[str] = set()
     for t in others:
-        for rel, content, mode in (_cmd_files(t, b) + _agent_files(t, b) + _skill_files(t, b) + mcp_files(root, t, b.servers)):
+        for rel, content, mode in (_cmd_files(t, b) + _agent_files(t, b) + _skill_files(t, b) + mcp_files(root, t, b.servers)
+                                   + hook_files(root, t)):
             if rel in seen:  # codex and windsurf share .agents/skills
                 continue
             seen.add(rel)

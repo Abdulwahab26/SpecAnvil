@@ -209,6 +209,57 @@ def load_plan(root: Path, module: str, specs_dir: str = "specs") -> tuple[dict, 
     return json.loads(p.read_text(encoding="utf-8")), p
 
 
+# Executables a plan's test_command may start with. The plan is written by an AI agent, so the command is treated
+# as untrusted input: no shell, no operators, and only a known test runner, the repo's own detected test command,
+# or something the user approved in .specforge/config.json ("allowed_test_commands").
+TEST_RUNNERS = {"pytest", "py.test", "python", "python3", "py", "uv", "poetry", "pipenv", "hatch", "tox", "nox",
+                "npm", "npx", "pnpm", "yarn", "bun", "bunx", "deno", "node", "jest", "vitest", "mocha", "ava", "playwright",
+                "go", "cargo", "dotnet", "mvn", "mvnw", "gradle", "gradlew", "php", "phpunit", "pest", "composer",
+                "bundle", "rspec", "rake", "ruby", "mix", "swift", "flutter", "dart", "make", "just", "task"}
+SHELL_META_RX = re.compile(r"[;&|`<>\n\r]|\$\(|\$\{")
+
+
+def safe_test_argv(command: str, root: Path, test_file: str | None = None) -> tuple[list[str], dict]:
+    """Turn a plan's test_command into an argv list + env, or raise ValueError explaining why it is refused."""
+    import shutil
+
+    from .config import load_config
+    if SHELL_META_RX.search(command):
+        raise ValueError("test_command may not contain shell operators (; & | ` < > $( ) or newlines): "
+                         "it is run directly, not through a shell.")
+    try:
+        parts = shlex.split(command, posix=os.name != "nt")
+    except ValueError as e:
+        raise ValueError(f"test_command is not a valid command line: {e}") from e
+    env = {}
+    while parts and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", parts[0]) and "{test_file}" not in parts[0]:
+        k, _, v = parts.pop(0).partition("=")
+        env[k] = v.strip("'\"")
+    if not parts:
+        raise ValueError("test_command has no executable")
+    cfg = load_config(root)
+    exe = Path(parts[0].strip("'\"")).name.lower()
+    exe = re.sub(r"\.(exe|cmd|bat|sh|ps1)$", "", exe)
+    detected = ((cfg.get("profile") or {}).get("stack") or {}).get("commands", {}).get("test", "")
+    allowed = set(TEST_RUNNERS)
+    for extra in [detected, *(cfg.get("allowed_test_commands") or [])]:
+        try:
+            first = shlex.split(extra, posix=os.name != "nt")[0] if extra else ""
+        except (ValueError, IndexError):
+            first = ""
+        if first:
+            allowed.add(re.sub(r"\.(exe|cmd|bat|sh|ps1)$", "", Path(first).name.lower()))
+    if exe not in allowed:
+        raise ValueError(f"test_command starts with '{parts[0]}', which is not a recognised test runner. Use the "
+                         f"repo's test command{' (' + detected + ')' if detected else ''}, or approve it by adding it to "
+                         "\"allowed_test_commands\" in .specforge/config.json.")
+    argv = [(a.strip("'\"") if os.name == "nt" else a).replace("{test_file}", test_file or "{test_file}") for a in parts]
+    resolved = shutil.which(argv[0], path=os.pathsep.join([str(root), os.environ.get("PATH", "")]))
+    if resolved:
+        argv[0] = resolved  # e.g. npm -> npm.cmd on Windows, ./gradlew in the repo
+    return argv, env
+
+
 REQUIRED_TOP = {"module": str, "test_framework": str, "test_command": str, "coverage_target": (int, float),
                 "milestones": list}
 REQUIRED_MS = {"id": str, "title": str, "status": str, "targets": list, "test_file": str, "cases": list,
@@ -223,6 +274,11 @@ def validate_plan(plan: dict, ix: CodeIndex | None = None) -> list[str]:
             errs.append(f"top-level '{k}' missing or wrong type")
     if "{test_file}" not in str(plan.get("test_command", "")):
         errs.append("test_command must contain {test_file} so each milestone can be verified on its own")
+    elif ix is not None:
+        try:
+            safe_test_argv(plan["test_command"], ix.root)
+        except ValueError as e:
+            errs.append(str(e))
     seen = set()
     for i, m in enumerate(plan.get("milestones") or []):
         where = m.get("id", f"milestones[{i}]")
@@ -281,14 +337,17 @@ def update_milestone(root: Path, module: str, milestone_id: str, status: str, no
         test_file = m["test_file"]
         if not (root / test_file).exists():
             raise ValueError(f"Cannot mark done: {test_file} does not exist.")
-        quoted = subprocess.list2cmdline([test_file]) if os.name == "nt" else shlex.quote(test_file)
-        cmd = plan["test_command"].replace("{test_file}", quoted)
+        argv, extra_env = safe_test_argv(plan["test_command"], root, test_file)  # refuses anything but a test runner
+        cmd = " ".join(shlex.quote(a) for a in argv)
         try:
-            proc = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True, timeout=timeout,
-                                  encoding="utf-8", errors="replace")
+            proc = subprocess.run(argv, shell=False, cwd=root, capture_output=True, text=True, timeout=timeout,
+                                  encoding="utf-8", errors="replace", env={**os.environ, **extra_env},
+                                  stdin=subprocess.DEVNULL)
             passed, tail = proc.returncode == 0, (proc.stdout + proc.stderr)[-1500:]
         except subprocess.TimeoutExpired:
             passed, tail = False, f"timed out after {timeout}s"
+        except OSError as e:
+            passed, tail = False, f"could not start the test runner: {e}"
         result.update({"command": cmd, "passed": passed, "output_tail": tail})
         if not passed:
             m["status"] = "in_progress"

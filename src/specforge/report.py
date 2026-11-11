@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import json
 import time
 from pathlib import Path
 
@@ -102,8 +101,3 @@ def write_report(root: Path, ix: CodeIndex | None = None) -> Path:
     out = state_dir(root) / "report.html"
     out.write_text(page, encoding="utf-8")
     return out
-
-
-def report_json(root: Path) -> str:
-    ix = CodeIndex(root)
-    return json.dumps({"stats": ix.stats(), "savings": ix.savings()}, indent=2)

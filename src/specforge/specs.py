@@ -23,9 +23,10 @@ def spec_roots(root: Path) -> list[Path]:
     from .config import features_dir
     cfg = load_config(root)
     roots = [specs_root(root)]
-    fd = root / features_dir(cfg)
-    if not str(fd.resolve()).startswith(str(roots[0].resolve())):
-        roots.append(fd)
+    for extra in [features_dir(cfg), *(cfg.get("extra_spec_dirs") or [])]:  # Kiro: .kiro/specs; OpenSpec: openspec/specs
+        fd = root / extra
+        if not any(str(fd.resolve()).startswith(str(r.resolve())) for r in roots):
+            roots.append(fd)
     return [r for r in roots if r.exists()]
 
 
@@ -84,7 +85,7 @@ def _resolve(ix: CodeIndex, path: str, qual: str):
 def _drift_specs(root: Path) -> list[dict]:
     """Specs that are checked: everything except templates and the specs README."""
     return [s for s in list_specs(root)
-            if "/_template/" not in s["path"] and "/templates/" not in s["path"]
+            if "/_template/" not in s["path"] and "/templates/" not in s["path"] and "/archive/" not in s["path"]
             and not s["path"].endswith("/README.md")]
 
 

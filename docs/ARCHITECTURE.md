@@ -159,3 +159,19 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Decision.** Commands, role agents, skills, rules and MCP servers are built once from the existing assets (written in the Claude Code dialect), then translated per tool: command syntax (`/sf:x`, `/sf-x`, `#sf-x`, skills, playbooks), file paths, argument placeholders (`$ARGUMENTS`, `${input:…}`, `{{args}}`), sub-agent wording, and MCP file/key/env syntax. Tools are detected from their config folders; `AGENTS.md` carries the shared rules for the tools that read it, with a one-line "how to run a workflow in your tool" table. Tools without commands get Agent Skills or manual steering; tools without local MCP get a CLI bridge to the same tools.
 **Why.** Teams mix tools, and one generator keeps every tool's setup consistent with a single source. A test generates all nine setups and checks every JSON, TOML and YAML front matter parses and that no Claude-only syntax leaks into other tools' files. Enforcement that lives in the MCP server (secret filtering, redaction, dedupe, tiers) holds in every tool; hook-based guards remain Claude Code only, and the docs say so.
 
+### ADR-22: OpenSpec mode adapts to the existing spec system
+**Decision.** When `openspec/` exists, SpecForge does not create `specs/features`. Features are OpenSpec changes (`openspec/changes`), capability specs are read from `openspec/specs`, SpecForge's own generated context goes to `openspec/specforge/`, and the lifecycle workflows carry a mapping to OpenSpec's files and format. Creating, applying and archiving changes stays with OpenSpec's workflows. SpecForge adds parsing, a structure check that needs no CLI, drift on code references, scenario-to-test coverage and gap detection.
+**Why.** Two spec systems in one repo is worse than either. Verified on the OpenSpec project itself: its own files are byte-identical after `init`.
+
+### ADR-23: Commands that come from an agent are untrusted input
+**Decision.** A unit-test plan's `test_command` is written by a model, so it is parsed, refused if it contains shell operators, required to start with a recognised test runner (or the repo's detected test command, or one the user approved in config), and executed as an argument list without a shell.
+**Why.** "Tests decide what is done" must not become "the plan file can run anything". The same principle as the secret guard: enforce in code, not in the prompt.
+
+### ADR-24: Claims are gates measured against something independent
+**Decision.** Retrieval is gated on 86 questions over five repos in four languages; the call graph is gated against call pairs observed at runtime; concurrency is gated by a multi-process stress test; coverage has a floor; type errors may not increase. Datasets verify their own ground truth before scoring.
+**Why.** The 12-question eval said "perfect"; the first question from another language found three defects. A metric only means something if it can fail.
+
+### ADR-25: Bounded local state
+**Decision.** Ledgers older than `log_retention_days` (90) are folded into per-tool totals and deleted, so all-time savings stay correct while the tables stay small; the database is compacted only when more than a quarter of its pages are free; the build reads, parses and writes in batches of 2,000 files; `init` records what it wrote in a manifest so `uninstall` removes exactly that.
+**Why.** A tool that lives in every repo for years must not grow without limit or leave files behind.
+

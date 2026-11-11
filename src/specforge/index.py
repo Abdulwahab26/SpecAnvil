@@ -9,7 +9,6 @@ Everything runs on the local machine; nothing here touches the network.
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import sqlite3
@@ -20,12 +19,12 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 
-from .config import INDEX_FILE, load_config, state_dir
+from .config import INDEX_FILE, debug_exc, load_config, state_dir
 from .parser import FileParse, Symbol, parse_source
 from .scanner import Candidate, is_secret, iter_candidates, looks_binary
 from .tokens import estimate_tokens, redact
 
-SCHEMA_VERSION = "6"
+SCHEMA_VERSION = "7"  # 7: no FTS prefix indexes (same query speed, ~25% smaller index)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS files(
   path TEXT PRIMARY KEY, lang TEXT, hash TEXT, size INT, mtime_ns INT, lines INT, tokens INT,
@@ -49,13 +48,14 @@ CREATE INDEX IF NOT EXISTS ix_sym_qual ON symbols(qualname);
 CREATE TABLE IF NOT EXISTS imports(path TEXT, source TEXT);
 CREATE INDEX IF NOT EXISTS ix_imp_path ON imports(path);
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(name, terms, signature, doc, path, body,
-  tokenize='unicode61', prefix='2 3 4');
+  tokenize='unicode61');
 CREATE TABLE IF NOT EXISTS summaries(body_hash TEXT PRIMARY KEY, summary TEXT, model TEXT, at REAL);
 CREATE TABLE IF NOT EXISTS vectors(symbol_id INTEGER PRIMARY KEY, body_hash TEXT, dim INT, vec BLOB);
 CREATE TABLE IF NOT EXISTS ledger(ts REAL, tool TEXT, returned INT, baseline INT, ms REAL);
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
 """
 DATA_TABLES = ("files", "symbols", "imports", "symbols_fts", "calls", "bases", "file_deps", "idents", "vectors")
+BUILD_BATCH = 2000  # files read, parsed and written per batch
 PARALLEL_THRESHOLD = 150  # below this, process start-up costs more than it saves
 
 
@@ -129,9 +129,16 @@ def body_terms(body: str, cap: int = 120) -> str:
     return " ".join(out)
 
 
+# Longest first. Besides plurals and -ing/-ed, the verb/noun families that code and tickets mix freely:
+# validate / validation / validator, authenticate / authentication, depend / dependency, serialize / serialization.
+STEM_SUFFIXES = ("izations", "ization", "encies", "ations", "ators", "izers", "ation", "izing", "ency", "ence", "ator",
+                 "ates", "ized", "izes", "izer", "ions", "ings", "ize", "ing", "ies", "ers", "ate", "ion", "ed", "es",
+                 "er", "s", "y", "e")
+
+
 def stem(w: str) -> str:
     """Tiny suffix stripper so tokens~token, expired~expiry~expire share a prefix."""
-    for suf in ("ations", "ation", "ings", "ing", "ies", "ers", "ed", "es", "er", "s", "y", "e"):
+    for suf in STEM_SUFFIXES:
         if len(w) - len(suf) >= 4 and w.endswith(suf):
             return w[: -len(suf)]
     return w
@@ -139,6 +146,8 @@ def stem(w: str) -> str:
 
 GENERATED_RX = re.compile(r"(\.gen\.|\.generated\.|/generated/|__generated__|\.pb\.|_pb2\.|/migrations?/versions/|"
                           r"\.d\.ts$|/client/(types|sdk|schemas)\.|openapi)", re.I)
+CONFIG_QUERY_RX = re.compile(r"\b(config\w*|settings?|ya?ml|json|toml|env|environment|ci|workflow|pipeline|docker\w*|"
+                             r"compose|scripts?|package|dependenc\w+|version|key|flag|option)\b")
 DECL_KINDS = ("variable", "field", "constant", "type", "enum_member", "key", "section")
 NONPROD_RX = re.compile(r"(^|/)(examples?|samples?|demos?|docs?|docs_src|benchmarks?|fixtures?|testdata|"
                         r"stories|storybook|playground|scripts|tools)(/|$)", re.I)
@@ -226,67 +235,75 @@ class CodeIndex:
             removed = [p for p in stored if p not in present]
         t_scan = time.time()
 
-        # 2. diff by fingerprint, read + hash only what changed
-        to_parse: list[tuple[str, str]] = []
-        meta: dict[str, tuple] = {}
-        touched: list[tuple] = []
-        for c in cands:
-            old = stored.get(c.path)
-            if not full and old and old[0] == c.size and old[1] == c.mtime_ns:
-                continue
-            try:
-                data = (self.root / c.path).read_bytes()
-            except OSError:
-                continue
-            if looks_binary(data):
-                if old:
-                    removed.append(c.path)
-                continue
-            h = hashlib.blake2b(data, digest_size=16).hexdigest()
-            if not full and old and old[2] == h:  # touched but identical: just refresh fingerprint
-                touched.append((c.size, c.mtime_ns, c.path))
-                continue
-            text = data.decode("utf-8", errors="replace")
-            to_parse.append((c.path, text))
-            meta[c.path] = (h, c.size, c.mtime_ns)
-
-        # 3. parse (parallel when worthwhile)
+        # 2-4. diff by fingerprint, then read + hash + parse + write in batches, so memory stays flat on huge repos
+        # (holding every changed file's text and parse result at once cost ~900 MB on a 25k-file repo)
+        changed = [c for c in cands
+                   if full or not stored.get(c.path) or stored[c.path][:2] != (c.size, c.mtime_ns)]
         n_workers = workers if workers is not None else min(8, os.cpu_count() or 1)
-        if len(to_parse) >= PARALLEL_THRESHOLD and n_workers > 1:
-            with ProcessPoolExecutor(max_workers=n_workers) as pool:
-                parsed = list(pool.map(_parse_job, to_parse, chunksize=32))
-            parsed = [(rel, _from_dict(d)) for rel, d in parsed]
-        else:
-            parsed = [(rel, parse_source(rel, text)) for rel, text in to_parse]
-        t_parse = time.time()
-
-        # 4. write in one transaction
-        texts = dict(to_parse)
-
-        with self.db:
-            wipe = full and only is None  # full rebuild: clear tables once instead of ~8 deletes per file
-            if wipe:
-                for t in ("symbols_fts", "symbols", "imports", "files", "calls", "bases"):
-                    self.db.execute(f"DELETE FROM {t}")  # noqa: S608 - fixed table names
-            else:
-                for rel in removed:
-                    self._delete_file(rel)
-                self.db.executemany("UPDATE files SET size=?, mtime_ns=? WHERE path=?", touched)
-            for rel, fp in parsed:
-                self._write_file(rel, texts[rel], fp, *meta[rel], fresh=wipe)
-            self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
-            self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
-            if parsed or removed:
-                from .graph import rebuild_file_deps
-                rebuild_file_deps(self)
+        pool = ProcessPoolExecutor(max_workers=n_workers) if len(changed) >= PARALLEL_THRESHOLD and n_workers > 1 else None
+        touched: list[tuple] = []
+        parsed_count, parse_secs = 0, 0.0
+        wipe = full and only is None  # full rebuild: clear tables once instead of ~8 deletes per file
+        try:
+            with self.db:
+                if wipe:
+                    for t in ("symbols_fts", "symbols", "imports", "files", "calls", "bases"):
+                        self.db.execute(f"DELETE FROM {t}")  # noqa: S608 - fixed table names
+                for start in range(0, len(changed), BUILD_BATCH):
+                    batch: list[tuple[str, str]] = []
+                    meta: dict[str, tuple] = {}
+                    for c in changed[start:start + BUILD_BATCH]:
+                        old = stored.get(c.path)
+                        try:
+                            data = (self.root / c.path).read_bytes()
+                        except OSError:
+                            continue
+                        if looks_binary(data):
+                            if old:
+                                removed.append(c.path)
+                            continue
+                        h = hashlib.blake2b(data, digest_size=16).hexdigest()
+                        if not full and old and old[2] == h:  # touched but identical: just refresh fingerprint
+                            touched.append((c.size, c.mtime_ns, c.path))
+                            continue
+                        batch.append((c.path, data.decode("utf-8", errors="replace")))
+                        meta[c.path] = (h, c.size, c.mtime_ns)
+                    tp = time.time()
+                    if pool is not None and batch:
+                        parsed = [(rel, _from_dict(d)) for rel, d in pool.map(_parse_job, batch, chunksize=32)]
+                    else:
+                        parsed = [(rel, parse_source(rel, text)) for rel, text in batch]
+                    parse_secs += time.time() - tp
+                    texts = dict(batch)
+                    for rel, fp in parsed:
+                        self._write_file(rel, texts[rel], fp, *meta[rel], fresh=wipe)
+                    parsed_count += len(parsed)
+                if not wipe:
+                    for rel in removed:
+                        self._delete_file(rel)
+                    self.db.executemany("UPDATE files SET size=?, mtime_ns=? WHERE path=?", touched)
+                self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_index', ?)", (str(time.time()),))
+                self.db.execute("INSERT OR REPLACE INTO meta VALUES('parser_version', ?)", (PARSER_VERSION,))
+                if parsed_count or removed:
+                    from .graph import rebuild_file_deps
+                    rebuild_file_deps(self)
+        finally:
+            if pool is not None:
+                pool.shutdown()
+        t_parse = t_scan + parse_secs
         ts_files = self.db.execute("SELECT COUNT(*) FROM files WHERE parser='tree-sitter'").fetchone()[0]
-        return {"files_changed": len(parsed), "files_removed": len(removed),
+        try:
+            self.prune_logs()  # bounded logs; at most once a day
+            self._compact()
+        except sqlite3.Error:
+            pass
+        return {"files_changed": parsed_count, "files_removed": len(removed),
                 "files_total": self.db.execute("SELECT COUNT(*) FROM files").fetchone()[0],
                 "symbols_total": self.db.execute("SELECT COUNT(*) FROM symbols").fetchone()[0],
                 "tree_sitter_files": ts_files, "seconds": round(time.time() - t0, 2),
-                "timings": {"scan": round(t_scan - t0, 3), "parse": round(t_parse - t_scan, 3),
-                            "write": round(time.time() - t_parse, 3)},
-                "parallel_workers": n_workers if len(to_parse) >= PARALLEL_THRESHOLD and n_workers > 1 else 1}
+                "timings": {"scan": round(t_scan - t0, 3), "parse": round(parse_secs, 3),
+                            "write": round(max(0.0, time.time() - t_parse), 3)},
+                "parallel_workers": n_workers if pool is not None else 1}
 
     def _summary(self, body_hash: str) -> str:
         if not hasattr(self, "_summary_cache"):
@@ -358,6 +375,10 @@ class CodeIndex:
     def _write_file(self, rel: str, text: str, fp: FileParse, h: str, size: int, mtime_ns: int, fresh: bool = False) -> None:
         if not fresh:
             self._delete_file(rel)
+        if not self.cfg.get("index_doc_sections", True):  # docs-heavy repos can opt out of section symbols
+            fp.symbols = [x for x in fp.symbols if x.kind != "section"]
+        if not self.cfg.get("index_config_keys", True):
+            fp.symbols = [x for x in fp.symbols if x.kind != "key"]
         lines = text.splitlines()
         self.db.execute("INSERT INTO files VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                         (rel, fp.language, h, size, mtime_ns, len(lines), estimate_tokens(text),
@@ -434,9 +455,53 @@ class CodeIndex:
         from .semantic import model_drift
         return model_drift(self)
 
+    def _compact(self) -> None:
+        """Reclaim space after big rewrites (a full rebuild frees about half the file): VACUUM only when more than
+        a quarter of the pages are free, so normal incremental refreshes never pay for it."""
+        free = self.db.execute("PRAGMA freelist_count").fetchone()[0]
+        total = self.db.execute("PRAGMA page_count").fetchone()[0]
+        if total > 2000 and free > total * 0.25:
+            self.db.commit()
+            self.db.execute("VACUUM")
+
+    def prune_logs(self, days: int | None = None, force: bool = False) -> dict:
+        """Keep the logs bounded: rows older than `days` (config log_retention_days, default 90) are folded into
+        per-tool totals (so all-time savings stay correct) and deleted; search/fetch logs and stale trace rows go
+        too. Runs at most once a day unless force=True."""
+        last = self.db.execute("SELECT value FROM meta WHERE key='last_prune'").fetchone()
+        if not force and last and time.time() - float(last[0]) < 86400:
+            return {"skipped": True}
+        days = int(days if days is not None else self.cfg.get("log_retention_days", 90))
+        cutoff = time.time() - days * 86400
+        self.db.execute("CREATE TABLE IF NOT EXISTS ledger_totals(tool TEXT PRIMARY KEY, calls INT, returned INT, baseline INT)")
+        removed = {}
+        with self.db:
+            old = self.db.execute("SELECT tool, COUNT(*) n, SUM(returned) r, SUM(baseline) b FROM ledger WHERE ts<? "
+                                  "GROUP BY tool", (cutoff,)).fetchall()
+            for r in old:
+                self.db.execute("INSERT INTO ledger_totals VALUES(?,?,?,?) ON CONFLICT(tool) DO UPDATE SET "
+                                "calls=calls+excluded.calls, returned=returned+excluded.returned, "
+                                "baseline=baseline+excluded.baseline", (r["tool"], r["n"], r["r"] or 0, r["b"] or 0))
+            removed["ledger"] = self.db.execute("DELETE FROM ledger WHERE ts<?", (cutoff,)).rowcount
+            have = {r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for table in ("query_log", "fetch_log", "runtime_imports"):
+                if table in have:
+                    removed[table] = self.db.execute(f"DELETE FROM {table} WHERE ts<?", (cutoff,)).rowcount  # noqa: S608
+            self.db.execute("INSERT OR REPLACE INTO meta VALUES('last_prune', ?)", (str(time.time()),))
+        return {"retention_days": days, "removed": removed}
+
     def savings(self) -> dict:
-        rows = self.db.execute("SELECT tool, COUNT(*) n, SUM(returned) r, SUM(baseline) b "
-                               "FROM ledger GROUP BY tool ORDER BY b DESC").fetchall()
+        rows = [dict(r) for r in self.db.execute("SELECT tool, COUNT(*) n, SUM(returned) r, SUM(baseline) b "
+                                                 "FROM ledger GROUP BY tool")]
+        if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='ledger_totals'").fetchone():
+            by = {r["tool"]: r for r in rows}
+            for t in self.db.execute("SELECT tool, calls, returned, baseline FROM ledger_totals"):  # pruned history
+                e = by.setdefault(t["tool"], {"tool": t["tool"], "n": 0, "r": 0, "b": 0})
+                e["n"] += t["calls"]
+                e["r"] = (e["r"] or 0) + t["returned"]
+                e["b"] = (e["b"] or 0) + t["baseline"]
+            rows = list(by.values())
+        rows.sort(key=lambda r: -(r["b"] or 0))
         per = [{"tool": r["tool"], "calls": r["n"], "returned_tokens": r["r"], "baseline_tokens": r["b"],
                 "saved_pct": round(100 * (1 - r["r"] / r["b"]), 1) if r["b"] else 0} for r in rows]
         tr = sum(p["returned_tokens"] for p in per)
@@ -519,6 +584,7 @@ class CodeIndex:
         ql = query.strip().lower()
         wants_tests = any(t.startswith("test") or t.startswith("spec") for t in terms)
         wants_docs = bool(re.search(r"\b(docs?|readme|guide|tutorial|section|how to|documentation|faq)\b", ql))
+        wants_config = bool(CONFIG_QUERY_RX.search(ql))
         wants_nonprod = any(t.startswith(("exampl", "sampl", "demo", "doc", "bench", "fixtur")) for t in terms)
         for r in rows:
             name_terms = split_terms(r["qualname"]).split()
@@ -536,6 +602,8 @@ class CodeIndex:
                 adj += 10
             if r["kind"] in DECL_KINDS and r["name"].lower() != ql:
                 adj += 4  # variables/fields/constants: useful, but rarely the answer to a behaviour query
+            if r["kind"] == "key" and not wants_config:
+                adj += 8  # config keys answer "which setting" questions; behaviour queries should land on code
             if r["kind"] == "section" and not wants_docs:
                 adj += 8  # doc sections answer "how/why" questions; code queries should land on code first
             elif r["kind"] == "section":
@@ -655,7 +723,7 @@ class CodeIndex:
         stems = list(dict.fromkeys(stem(w) for w in words))
         syn = {**SYNONYMS, **self.user_synonyms()}
         extra = list(dict.fromkeys(x for st in stems for k, v in syn.items() if st.startswith(k) for x in v))
-        hits = self.search(" ".join(words + extra), limit=100)
+        hits = self.search(" ".join(words + extra), limit=int(self.cfg.get("context_candidates", 300)))
         sem_rank: dict[int, int] = {}
         if self.cfg.get("semantic_context", True):
             try:
@@ -667,9 +735,13 @@ class CodeIndex:
                             r.setdefault("score", 0.0)
                             hits.append(r)
             except Exception:  # noqa: BLE001 - embeddings optional; never break context building
+                debug_exc("index:737")
                 sem_rank = {}
         extra_stems = [stem(x) for x in extra if stem(x) not in stems]
         wants_tests = any(w.startswith("test") for w in words)
+        wants_config = bool(CONFIG_QUERY_RX.search(task.lower()))
+        wants_docs = bool(re.search(r"\b(docs?|readme|guide|tutorial|section|documentation|faq)\b", task.lower()))
+        wants_nonprod = any(w.startswith(("exampl", "sampl", "demo", "doc", "bench", "fixtur", "script")) for w in words)
         file_score = Counter(h["path"] for h in hits)
 
         def rank(h: dict) -> float:
@@ -686,6 +758,12 @@ class CodeIndex:
                 score -= 1
             if h["kind"] in DECL_KINDS:
                 score += 6
+            if h["kind"] == "key" and not wants_config:
+                score += 10
+            if h["kind"] == "section" and not wants_docs:
+                score += 10
+            if NONPROD_RX.search(h["path"]) and not wants_nonprod:
+                score += 6  # examples, docs snippets and scripts use the API; they rarely define it
             if h["id"] in sem_rank:
                 score -= 8 * (1 - sem_rank[h["id"]] / 40)  # semantic agreement, strongest for top matches
             return score
@@ -857,13 +935,3 @@ class CodeIndex:
         rows = self.db.execute("SELECT DISTINCT path FROM imports WHERE source LIKE ? AND path != ?",
                                (f"%{stem}%", path)).fetchall()
         return [r[0] for r in rows]
-
-    def to_json(self) -> str:
-        return json.dumps(self.stats(), indent=2)
-
-
-def group_by(rows, key):
-    d = defaultdict(list)
-    for r in rows:
-        d[r[key]].append(r)
-    return d

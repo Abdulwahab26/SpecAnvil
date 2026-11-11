@@ -20,6 +20,7 @@ begin rescue ensure unless until when match pass global nonlocal assert del go d
 string int float bool char byte long short double decimal object any unknown never extends implements where
 get set""".split())
 
+REF_RX = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]{2,})\b(?!\s*[(=:]|\s*<[^<>()]{0,60}>\s*\()")
 CALL_RX = re.compile(r"(?:([A-Za-z_$][\w$]*)\s*(?:\.|::|->)\s*)?(?<![\w$])(?:new\s+)?([A-Za-z_$][\w$]*)\s*(?:<[^<>()]{0,60}>)?\s*\(")
 IDENT_RX = re.compile(r"[A-Za-z_$][\w$]{2,}")
 STRING_RX = re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`[^`]*`)""")
@@ -85,10 +86,22 @@ class Extras:
     new_symbols: list = field(default_factory=list)  # container symbols discovered here (e.g. Go structs)
 
 
+INTERP_RX = re.compile(r"\{([^{}\n]*)\}")
+
+
 def _strip_noise(source: str) -> str:
     """Blank out strings and comments, keeping line structure, so calls/idents come from code only."""
     def blank(m):
-        return re.sub(r"[^\n]", " ", m.group(0))
+        text = m.group(0)
+        out = re.sub(r"[^\n]", " ", text)
+        # interpolated strings contain real code: f"{slug(x)}", `${fmt(x)}`, "#{name}", $"{Total()}"
+        prev = source[m.start() - 1] if m.start() else ""
+        if "{" in text and (text[0] == "`" or prev in "fF$" or text[:1] in "fF" or "${" in text or "#{" in text):
+            chars = list(out)
+            for seg in INTERP_RX.finditer(text):
+                chars[seg.start(1):seg.end(1)] = text[seg.start(1):seg.end(1)]
+            out = "".join(chars)
+        return out
     s = STRING_RX.sub(blank, source)
     return COMMENT_RX.sub(blank, s)
 
@@ -229,6 +242,7 @@ def extract(source: str, lang: str, symbols: list) -> Extras:
 
     # calls: one linear pass, each call attributed to the innermost enclosing function/method
     seen_by: dict[int, set] = {}
+    local_funcs = {x.name for x in symbols if x.kind in ("function", "method") and len(x.name) >= 3}
     for ln_no in range(1, len(lines) + 1):
         owner = callable_at[ln_no] if ln_no < n_lines else None
         if owner is None:
@@ -251,10 +265,18 @@ def extract(source: str, lang: str, symbols: list) -> Extras:
             if close < 0:
                 continue
             text = text[close + 1:]
-        if "(" not in text:
-            continue
         seen = seen_by.setdefault(id(owner), set())
         if len(seen) > 200:
+            continue
+        # functions passed as values (callbacks, handler tables, set_defaults(fn=handler)): record a reference
+        # edge to functions defined in this file; "&" marks it so the resolver stays inside the file
+        if local_funcs and ln_no != owner.start_line:
+            for rm in REF_RX.finditer(text):
+                name = rm.group(1)
+                if name in local_funcs and name != owner.name and ("&", name) not in seen:
+                    seen.add(("&", name))
+                    ex.calls.append((owner.qualname, name, ln_no, "&"))
+        if "(" not in text:
             continue
         for cm in CALL_RX.finditer(text):
             recv, callee = cm.group(1) or "", cm.group(2)

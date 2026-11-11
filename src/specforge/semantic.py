@@ -17,7 +17,7 @@ import urllib.request
 from array import array
 from urllib.parse import urlparse
 
-from .config import load_config
+from .config import debug_exc, load_config
 from .index import CodeIndex, body_terms, split_terms
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
@@ -45,12 +45,13 @@ class _FastEmbed:
         if not allow_download:
             os.environ["HF_HUB_OFFLINE"] = "1"  # no update checks at query time
         from fastembed import (
-            TextEmbedding,  # optional dependency: pip install "specforge[semantic]"
+            TextEmbedding,  # optional dependency: pip install "specforge-ai[semantic]"
         )
         cache = str(home() / "models")
         try:
             self.model = TextEmbedding(model, cache_dir=cache, local_files_only=True)
         except Exception:  # noqa: BLE001 - not downloaded yet
+            debug_exc("semantic:53")
             if not allow_download:
                 raise ValueError(f"Embedding model {model} is not downloaded. Run `specforge embed` once.")
             os.environ.pop("HF_HUB_OFFLINE", None)

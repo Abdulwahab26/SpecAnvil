@@ -3,3 +3,4 @@ __pycache__/
 dist/
 .specforge/
 .pytest_cache/
+.coverage

@@ -1,0 +1,142 @@
+{
+ "repo": "gin-gonic/gin@75ccf94",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "attach a middleware that runs for every request",
+   "expected": [
+    "Use"
+   ]
+  },
+  {
+   "task": "read a path parameter from the URL inside a handler",
+   "expected": [
+    "Param"
+   ]
+  },
+  {
+   "task": "bind the JSON request body to a struct and fail with 400 when it is invalid",
+   "expected": [
+    "ShouldBindJSON",
+    "BindJSON"
+   ]
+  },
+  {
+   "task": "send a JSON response with a status code",
+   "expected": [
+    "JSON"
+   ]
+  },
+  {
+   "task": "stop the remaining handlers and return an error status",
+   "expected": [
+    "Abort",
+    "AbortWithStatus",
+    "AbortWithStatusJSON"
+   ]
+  },
+  {
+   "task": "recover from a panic in a handler and answer 500",
+   "expected": [
+    "Recovery",
+    "CustomRecovery",
+    "RecoveryWithWriter"
+   ]
+  },
+  {
+   "task": "group routes under a common URL prefix",
+   "expected": [
+    "Group"
+   ]
+  },
+  {
+   "task": "serve static files from a directory",
+   "expected": [
+    "Static",
+    "StaticFS"
+   ]
+  },
+  {
+   "task": "log each request with its latency and status",
+   "expected": [
+    "Logger",
+    "LoggerWithConfig",
+    "LoggerWithFormatter"
+   ]
+  },
+  {
+   "task": "read a query string value with a default",
+   "expected": [
+    "DefaultQuery",
+    "Query"
+   ]
+  },
+  {
+   "task": "get the client's IP address when behind a proxy",
+   "expected": [
+    "ClientIP"
+   ]
+  },
+  {
+   "task": "start the HTTP server on a port",
+   "expected": [
+    "Run"
+   ]
+  },
+  {
+   "task": "handle requests that match no route",
+   "expected": [
+    "NoRoute"
+   ]
+  },
+  {
+   "task": "save an uploaded file to disk",
+   "expected": [
+    "SaveUploadedFile",
+    "FormFile"
+   ]
+  },
+  {
+   "task": "set a cookie and read it back",
+   "expected": [
+    "SetCookie",
+    "Cookie"
+   ]
+  },
+  {
+   "task": "render an HTML template",
+   "expected": [
+    "HTML",
+    "LoadHTMLGlob"
+   ]
+  },
+  {
+   "task": "store a value on the request context and read it later",
+   "expected": [
+    "Set",
+    "Get",
+    "MustGet"
+   ]
+  },
+  {
+   "task": "redirect the client to another URL",
+   "expected": [
+    "Redirect"
+   ]
+  },
+  {
+   "task": "require basic auth on a group of routes",
+   "expected": [
+    "BasicAuth",
+    "BasicAuthForRealm"
+   ]
+  },
+  {
+   "task": "validate struct fields using tags",
+   "expected": [
+    "ValidateStruct",
+    "validate"
+   ]
+  }
+ ]
+}

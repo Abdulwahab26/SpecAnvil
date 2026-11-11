@@ -1,0 +1,131 @@
+{
+ "repo": "expressjs/express@1faf228",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "mount middleware on the application",
+   "expected": [
+    "use"
+   ]
+  },
+  {
+   "task": "send a JSON response",
+   "expected": [
+    "json"
+   ]
+  },
+  {
+   "task": "set a response header",
+   "expected": [
+    "set",
+    "header"
+   ]
+  },
+  {
+   "task": "redirect to another URL",
+   "expected": [
+    "redirect"
+   ]
+  },
+  {
+   "task": "render a view template",
+   "expected": [
+    "render"
+   ]
+  },
+  {
+   "task": "send a file as a download attachment",
+   "expected": [
+    "download",
+    "attachment"
+   ]
+  },
+  {
+   "task": "read a request header",
+   "expected": [
+    "get",
+    "header"
+   ]
+  },
+  {
+   "task": "set a cookie on the response",
+   "expected": [
+    "cookie"
+   ]
+  },
+  {
+   "task": "clear a cookie",
+   "expected": [
+    "clearCookie"
+   ]
+  },
+  {
+   "task": "check which content types the client accepts",
+   "expected": [
+    "accepts"
+   ]
+  },
+  {
+   "task": "set the HTTP status code of the response",
+   "expected": [
+    "status"
+   ]
+  },
+  {
+   "task": "start listening on a port",
+   "expected": [
+    "listen"
+   ]
+  },
+  {
+   "task": "register a template engine",
+   "expected": [
+    "engine"
+   ]
+  },
+  {
+   "task": "define a callback for a route parameter",
+   "expected": [
+    "param"
+   ]
+  },
+  {
+   "task": "send a file from disk",
+   "expected": [
+    "sendFile"
+   ]
+  },
+  {
+   "task": "respond differently per requested format",
+   "expected": [
+    "format"
+   ]
+  },
+  {
+   "task": "turn an application setting on or off",
+   "expected": [
+    "enable",
+    "disable",
+    "set"
+   ]
+  },
+  {
+   "task": "set the Location header",
+   "expected": [
+    "location"
+   ]
+  },
+  {
+   "task": "set the Link header",
+   "expected": [
+    "links"
+   ]
+  },
+  {
+   "task": "add a field to the Vary header",
+   "expected": [
+    "vary"
+   ]
+  }
+ ]
+}

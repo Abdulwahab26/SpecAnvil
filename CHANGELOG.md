@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0
+- **Safety**: unit-test commands from plans are allowlisted (known test runners, the repo's detected command, or `allowed_test_commands`), refuse shell operators and never run through a shell.
+- **OpenSpec mode**: detects `openspec/` and works inside it; `specforge openspec status | check | coverage | gaps`, four MCP tools, `/sf:baseline`, lifecycle workflows mapped to OpenSpec's files and format; OpenSpec's own files are left untouched.
+- **Secret guard in more tools**: hooks for Cursor (`.cursor/hooks.json`) and GitHub Copilot (`.github/hooks/specforge.json`) in their own protocols.
+- **`specforge uninstall [tools] [--dry-run] [--purge]`**: removes exactly what `init` wrote (manifest), keeps your own rules, servers, hooks and specs.
+- **Retrieval**: doc comments indexed for every language (Go, Java and JavaScript had none); stemmer connects verb/noun families; config keys and doc sections rank below code for behaviour questions; larger candidate pool. Multi-repo eval: 0.89 → 0.96 found, MRR 0.61 → 0.72.
+- **Call graph**: class instantiation linked to constructors; calls inside interpolated strings; callbacks passed as values; functions reached through re-exporting modules; `self` / `this` calls prefer the caller's class. Recall against 751 call pairs traced at runtime: 0.91.
+- **Scale and footprint**: batched build (peak memory 906 → 393 MB on Kubernetes), no FTS prefix indexes and compaction after rebuilds (index about half the size), logs pruned after 90 days with totals preserved, opt-out flags for doc sections and config keys.
+- **Evidence in CI**: 74-question multi-repo gate, call-graph accuracy gate, concurrency stress test, lint, coverage floor (78% measured, 72% floor), type-error ratchet, weekly scheduled run; dependency upper bounds.
+- **Maintainability**: `server.py`, `insights.py` and the test file split into focused modules; `SPECFORGE_DEBUG=1` logs errors that are deliberately not raised; five unused functions found by SpecForge's own dead-code tool removed.
+- **Packaging**: distribution renamed `specforge-ai` (the PyPI name `specforge` belongs to another project); PyPI publishing step ready behind a repository variable.
+- Benchmark vs jCodeMunch is now 6,799 tokens (−61%; was −66%) because results include doc comments. 96 tools; 63 unit tests.
+
 ## 0.7.0
 - **Any AI coding tool**: `specforge init` detects Claude Code, GitHub Copilot, Cursor, Augment Code, Windsurf / Devin Local, OpenAI Codex, Kiro, Gemini CLI and Replit from their config folders (or `--agents ...`) and writes rules, workflows, role agents, skills and MCP config in each tool's native format; `specforge agents list | add | all`.
 - **Specs per tool**: Kiro feature specs in `.kiro/specs/<feature>/` plus seeded steering (product, tech, structure); `features_dir` / `templates_dir` config; drift, `list_specs` and `read_spec` cover both folders.

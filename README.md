@@ -14,15 +14,17 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 
 | Measured | Result |
 |---|---|
-| jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **66% fewer tokens** than jCodeMunch (5,924 vs 17,581) |
-| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **2–6× faster** (0.27–0.34 / 3.44–4.02 / 0.39–0.48 s vs 1.72 / 7.07 / 1.56 s) |
+| jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **61% fewer tokens** than jCodeMunch (6,799 vs 17,581; results now include each symbol's doc comment) |
+| Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **2–6× faster** (0.26–0.28 / 3.37–3.45 / 0.32–0.39 s vs 1.72 / 7.07 / 1.56 s) |
 | Symbols indexed vs jCodeMunch (express / fastapi / gin) | 994 / **26,842** / **1,960** vs 1,085 / 13,699 / 1,822 |
 | jCodeMunch's 98 tool names | **every one has an implemented equivalent** ([table](docs/COMPARISON.md#5-tools-every-jcodemunch-tool-mapped)), plus SpecForge-only tools |
-| Tool schema per turn vs jCodeMunch | default **~790** vs ~1,050 tokens (6 tools each); everything **~7,870** vs ~28,142 |
+| Tool schema per turn vs jCodeMunch | default **~790** vs ~1,050 tokens (6 tools each); everything (96 tools) **~8,120** vs ~28,142 |
 | Starter packs | **51** curated (npm / PyPI / Go / GitHub), fetched from the registry, **no install needed** |
 | Paraphrased tasks in `get_context` with local embeddings | **8/12** found (3/12 keyword-only) |
 | Token savings, 13 typical lookups on [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) | **84% fewer tokens** than reading the files |
-| Retrieval eval (12 tasks, 4k budget) | recall **1.00**, MRR **0.88** (CI gate: ≥ 0.95 / ≥ 0.75) |
+| Retrieval, 86 questions across 5 repos (Python, TypeScript, Go, JavaScript, Java), 4k budget | needed symbol in context **96%**, MRR **0.72** (74 new questions); original 12: recall **1.00**, MRR **0.86**. Both are CI gates |
+| Call graph vs what really ran (751 call pairs traced at runtime) | **91%** of real calls are in the static graph (CI gate ≥ 85%) |
+| Scale: Kubernetes (25,126 files, 397,268 symbols) | cold index **67 s** on 2 cores, peak memory **393 MB**, refresh with no changes **0.3 s**, search **~70 ms** |
 | Refresh after an edit on Django (5.6k files) | **0.14 s** (no-op: 0.09 s) |
 | Network calls during indexing | **none** (tested with sockets blocked) |
 
@@ -45,6 +47,18 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 | Replit Agent | groom playbook | `replit.md`, `.specforge/playbooks`; tools via `specforge tool <name> '<json>'` (no local MCP) |
 
 Details, per-tool limits and the documentation each format was checked against: [docs/PROVIDERS.md](docs/PROVIDERS.md).
+
+## Already using OpenSpec?
+
+SpecForge detects an `openspec/` folder and works **inside it** instead of creating a second spec system. OpenSpec's own workflows keep creating, applying and archiving changes; SpecForge adds what they don't have:
+
+```bash
+specforge openspec status              # capabilities, requirements, scenarios, active changes with task progress
+specforge openspec check [--strict]    # structure problems (no OpenSpec CLI needed) + code references that no longer resolve
+specforge openspec coverage [target]   # which scenarios have a test: explicit, likely, or none
+specforge openspec gaps                # code no capability spec mentions; /sf:baseline writes specs for it
+```
+The lifecycle workflows read and write OpenSpec's files (proposal, delta specs, design, tasks) in OpenSpec's format, add a code map so drift is detected, and derive QA cases and Playwright tests from the scenarios. SpecForge's own generated context lives in `openspec/specforge/`. Measured on the OpenSpec project itself: 44 capabilities, 318 requirements and 1,039 scenarios parsed; 36% of scenarios matched to a test.
 
 ## What `specforge init` creates
 
@@ -143,7 +157,7 @@ specforge pack export npm:react -o react.sfpack   # share a pack offline; `specf
 ```
 Archives are extracted with path-traversal, absolute-path and size checks; packs are registered as sources, so every core tool accepts `source="npm:react"`.
 
-Tool tiers keep the per-turn schema small. The default `lite` tier is 6 tools (~790 tokens: `repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`); then `core` (11, ~1.2k), `standard` (32, ~3.0k), `analysis` (62, ~5.4k), `full` (92, ~7.9k; jCodeMunch's full surface is ~28k). Agents switch with `set_tool_tier` when a task needs more, or call a single tool with `run_tool`. Pin a tier with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`. Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
+Tool tiers keep the per-turn schema small. The default `lite` tier is 6 tools (~790 tokens: `repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`); then `core` (11, ~1.2k), `standard` (36, ~3.2k), `analysis` (66, ~5.7k), `full` (96, ~8.1k; jCodeMunch's full surface is ~28k). Agents switch with `set_tool_tier` when a task needs more, or call a single tool with `run_tool`. Pin a tier with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`. Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
 
 ## Your profile: models per role
 
@@ -166,7 +180,7 @@ Specs reference code as `` `path::Qualname` ``. `specforge drift` checks each re
 ## Privacy and security
 
 - **Local only.** Indexing, detection, drift, test analysis and reports run on your machine with no telemetry. Indexing never touches the network (a test blocks sockets to prove it). The one network step is fetching tree-sitter grammars, done explicitly by `specforge grammars` or by `init` (skip with `--offline`; uncached languages then use the built-in regex extractor).
-- **Enforced, not just instructed.** A `PreToolUse` hook blocks Claude from reading or writing secret files; unit-test "done" is verified by running the tests; plans are schema-checked. See the enforcement table in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- **Enforced, not just instructed.** Hooks block the agent from reading secret files in Claude Code, Cursor and GitHub Copilot; unit-test commands are restricted to recognised test runners and never run through a shell; unit-test "done" is verified by running the tests; plans are schema-checked. See the enforcement table in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Your code only goes where it already goes**: to the model your Claude Code account uses, and only the snippets the agent asks for.
 - **Secrets are never indexed** (`.env*`, keys, keystores, credential files, tfstate…) and secret-looking values (private keys, cloud and API tokens, passwords, credentials in URLs) are **redacted** from tool output.
 - **Connector configs hold no secrets**: `.mcp.json` uses `${ENV_VAR}` references. Database connectors default to read-only or restricted modes.
@@ -177,7 +191,8 @@ Specs reference code as `` `path::Qualname` ``. `specforge drift` checks each re
 Requires Python 3.10+. Node 18+ (`npx`) and `uv` (`uvx`) are needed only for the connectors that use them.
 
 ```bash
-uv tool install git+https://github.com/Abdulwahab26/Specforge   # or: pipx install git+https://github.com/Abdulwahab26/Specforge
+pipx install git+https://github.com/Abdulwahab26/Specforge      # or: uv tool install git+https://github.com/Abdulwahab26/Specforge
+# The PyPI name is `specforge-ai` ("specforge" on PyPI is an unrelated project, so do not `pip install specforge`).
 specforge doctor
 ```
 
@@ -188,13 +203,15 @@ specforge doctor
 ```
 specforge init [path] [--agents auto|all|cursor,copilot,...] [--dry-run] [--offline] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
 specforge agents list | add <tools> | all     # AI coding tools to set up
+specforge uninstall [tools] [--dry-run] [--purge]   # remove SpecForge's files for some or all tools; specs are kept
+specforge openspec status | check [target] | coverage [target] | gaps
 specforge tool <name> '<json args>' | --list  # any MCP tool from the shell (for tools without local MCP)
 specforge profile [set|unset|sync] ...   # your models per role and backfill settings
 specforge tests surface|validate|status <module>
 specforge grammars [--list]              # explicit, one-time grammar download
 specforge docs plan|status|check [--strict]|facts <id>
 specforge analyze importance|dead|cycles|coupling|layers|risk|hotspots|ast [--preset X]
-specforge embed [--code-model]          # optional local embeddings (pip install 'specforge[semantic]')
+specforge embed [--code-model]          # optional local embeddings (pip install 'specforge-ai[semantic]')
 specforge source add|list|remove pkg:react | gh:owner/repo[@ref] | path:../svc
 specforge watch [--embed]
 specforge pack list | add <name|npm:x|pypi:x|go:x|gh:o/r>[@ver] | export <source> -o x.sfpack | import x.sfpack

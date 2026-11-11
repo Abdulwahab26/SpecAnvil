@@ -1,0 +1,102 @@
+{
+ "repo": "spring-projects/spring-petclinic",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "find owners by last name",
+   "expected": [
+    "findByLastNameStartingWith",
+    "processFindForm"
+   ]
+  },
+  {
+   "task": "create a new owner from a form",
+   "expected": [
+    "processCreationForm",
+    "initCreationForm"
+   ]
+  },
+  {
+   "task": "add a new pet to an owner",
+   "expected": [
+    "addPet"
+   ]
+  },
+  {
+   "task": "validate a pet's name and birth date",
+   "expected": [
+    "PetValidator",
+    "validate"
+   ]
+  },
+  {
+   "task": "book a visit for a pet",
+   "expected": [
+    "processNewVisitForm",
+    "addVisit"
+   ]
+  },
+  {
+   "task": "list all veterinarians",
+   "expected": [
+    "showVetList",
+    "showResourcesVetList",
+    "findAll"
+   ]
+  },
+  {
+   "task": "show an owner's details",
+   "expected": [
+    "showOwner"
+   ]
+  },
+  {
+   "task": "update an existing owner",
+   "expected": [
+    "processUpdateOwnerForm"
+   ]
+  },
+  {
+   "task": "format the pet type for display",
+   "expected": [
+    "PetTypeFormatter",
+    "print",
+    "parse"
+   ]
+  },
+  {
+   "task": "trigger an exception to test the error page",
+   "expected": [
+    "CrashController",
+    "triggerException"
+   ]
+  },
+  {
+   "task": "cache configuration for vets",
+   "expected": [
+    "CacheConfiguration"
+   ]
+  },
+  {
+   "task": "welcome home page",
+   "expected": [
+    "WelcomeController",
+    "welcome"
+   ]
+  },
+  {
+   "task": "list a vet's specialties",
+   "expected": [
+    "getSpecialties",
+    "Specialty"
+   ]
+  },
+  {
+   "task": "paginate the owners list",
+   "expected": [
+    "findPaginatedForOwnersLastName",
+    "addPaginationModel"
+   ]
+  }
+ ]
+}

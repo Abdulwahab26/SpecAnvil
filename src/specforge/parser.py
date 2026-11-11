@@ -10,9 +10,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from .config import debug_exc
+
 try:  # pragma: no cover - import guard
     import tree_sitter_language_pack as tslp
 except Exception:  # noqa: BLE001
+    debug_exc("parser:15")
     tslp = None
 
 _FAILED_LANGS: set[str] = set()
@@ -37,6 +40,7 @@ def local_grammars(refresh: bool = False) -> set[str]:
         try:
             _LOCAL_GRAMMARS = set(tslp.downloaded_languages()) if tslp is not None else set()
         except Exception:  # noqa: BLE001
+            debug_exc("parser:39")
             _LOCAL_GRAMMARS = set()
     return _LOCAL_GRAMMARS
 
@@ -52,15 +56,17 @@ def fetch_grammars(langs: list[str]) -> dict:
             tslp.download([lang])
             ok.append(lang)
         except Exception:  # noqa: BLE001 - not in manifest, offline, etc.
+            debug_exc("parser:54")
             bad.append(lang)
     local_grammars(refresh=True)
     try:
         cache = str(tslp.cache_dir())
     except Exception:  # noqa: BLE001
+        debug_exc("parser:59")
         cache = None
     return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
             "cache": cache}
-PARSER_VERSION = "9"  # bump to force a full re-index after parser changes
+PARSER_VERSION = "14"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -116,6 +122,7 @@ def detect_language(rel_path: str) -> str:
             if lang:
                 return str(lang)
         except Exception:  # noqa: BLE001
+            debug_exc("parser:118")
             pass
     return _EXT_FALLBACK.get(PurePosixPath(rel_path).suffix.lower(), "text")
 
@@ -142,6 +149,7 @@ def _parse_tree_sitter(source: str, lang: str) -> FileParse | None:
         res = tslp.process(source, tslp.ProcessConfig(language=lang, structure=True,
                                                       imports=True, exports=True, docstrings=True))
     except Exception:  # noqa: BLE001 - missing grammar, offline, parse failure
+        debug_exc("parser:144")
         _FAILED_LANGS.add(lang)
         return None
 
@@ -344,6 +352,8 @@ def parse_source(rel_path: str, source: str) -> FileParse:
                                  exported=source.split("\n")[line - 1].lstrip().startswith(("export", "pub ", "public"))))
     fp.symbols.sort(key=lambda s: (s.start_line, s.end_line))
     fp.calls, fp.bases, fp.package, fp.idents = ex.calls, ex.bases, ex.package, ex.idents
+    from .doccomments import attach_docs
+    attach_docs(source, fp.language, fp.symbols)  # comments above symbols / docstrings, for every language
     return fp
 
 

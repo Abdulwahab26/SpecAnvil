@@ -8,6 +8,7 @@ specforge init --agents cursor,copilot
 specforge init --agents all
 specforge agents list               # supported / detected / configured
 specforge agents add kiro           # add a tool later; earlier choices are kept
+specforge uninstall cursor          # remove one tool's files (or all with no argument); your specs and own config stay
 ```
 
 ## What each tool gets
@@ -34,18 +35,30 @@ specforge agents add kiro           # add a tool later; earlier choices are kept
 
 ## Limits by tool
 
-- **Programmatic guard rails differ.** The PreToolUse secret-file guard and the post-edit re-index hook are Claude Code hooks. Elsewhere, secrets are still never indexed and are redacted from every tool result (server side), and the index refreshes itself every 20 seconds, but a tool's own file reader isn't blocked from opening a secret file.
+- **Programmatic guard rails differ.** The secret-file guard runs as a hook in Claude Code (`.claude/settings.json`), Cursor (`.cursor/hooks.json`: `beforeReadFile`, `beforeShellExecution`, plus re-index on `afterFileEdit`) and GitHub Copilot (`.github/hooks/specforge.json`: `preToolUse`), each answering in that tool's own protocol. The other tools document no hook system, so there secrets are still never indexed and are redacted from every tool result, and the index refreshes itself every 20 seconds, but the tool's own file reader isn't blocked from opening a secret file.
 - **Sub-agents.** `/flow` hands steps to role agents in Claude Code, Copilot and Codex. In the other tools the workflow tells the agent to run the steps itself, in order, stopping at each gate.
 - **Connector servers.** Ticket and database MCP servers are written for Claude Code, Copilot, Cursor, Kiro and Gemini with each tool's env-var syntax. Windsurf and Codex get the SpecForge server only (their env syntax for project files isn't documented); add connectors in those tools' MCP settings. Augment has no project-level MCP file, so it gets an import file.
 - **Formats change.** These tools ship new formats often. They were checked against each tool's documentation on 2026-11-11.
 
 ## Sources
 
-- GitHub Copilot: [customization overview](https://code.visualstudio.com/docs/copilot/customization/overview), [custom agents](https://code.visualstudio.com/docs/copilot/customization/custom-agents), [prompt files](https://code.visualstudio.com/docs/copilot/customization/prompt-files), [agent skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills), [MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)
-- Cursor: [rules](https://cursor.com/docs/rules), [MCP](https://cursor.com/docs/mcp), [commands](https://docs.cursor.com/en/agent/chat/commands)
+- GitHub Copilot: [customization overview](https://code.visualstudio.com/docs/copilot/customization/overview), [custom agents](https://code.visualstudio.com/docs/copilot/customization/custom-agents), [prompt files](https://code.visualstudio.com/docs/copilot/customization/prompt-files), [agent skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills), [MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration), [hooks](https://code.visualstudio.com/docs/copilot/customization/hooks)
+- Cursor: [rules](https://cursor.com/docs/rules), [MCP](https://cursor.com/docs/mcp), [commands](https://docs.cursor.com/en/agent/chat/commands), [hooks](https://cursor.com/docs/hooks)
 - Augment Code: [rules](https://docs.augmentcode.com/cli/rules), [custom commands](https://docs.augmentcode.com/using-augment/custom-commands), [skills](https://docs.augmentcode.com/using-augment/skills), [MCP](https://docs.augmentcode.com/setup-augment/mcp)
 - Windsurf / Devin Local: [customizations](https://docs.devin.ai/desktop/devin-local/customizations)
 - OpenAI Codex: [customisation stack overview](https://codex.danielvaughan.com/2026/04/12/codex-cli-customisation-stack-unified-system/) (third-party summary; the official manual page didn't load)
 - Kiro: [steering](https://kiro.dev/docs/steering/), [specs](https://kiro.dev/docs/specs/), [MCP configuration](https://kiro.dev/docs/mcp/configuration/)
 - Gemini CLI: [custom commands](https://geminicli.com/docs/cli/custom-commands/)
 - Replit: [replit.md](https://docs.replit.com/core-concepts/agent/replit-dot-md), [connect via MCP](https://docs.replit.com/build/connect-via-mcp)
+
+## Not verified inside the real apps
+
+Every generated file is checked for valid syntax and against each tool's documentation, and the MCP server is tested as those tools launch it. What has not been done is opening each setup inside the actual app. Before rolling out to a team, run this once per tool you use:
+
+1. `specforge init --agents <tool>` in a test repo, then open the repo in the tool.
+2. The SpecForge MCP server shows as connected and `search_symbols` returns results.
+3. The `groom` workflow appears where the table above says (slash command, skill or steering file) and runs.
+4. The always-on rules are loaded (ask the agent which workflow commands exist).
+5. Where hooks are supported, asking the agent to read `.env` is refused.
+6. `specforge uninstall <tool>` leaves your own files as they were.
+
