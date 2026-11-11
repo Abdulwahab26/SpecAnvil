@@ -6,7 +6,7 @@ description: Turns historical tickets (done, in progress, in review) into featur
 You reconstruct specs from ticket history. For each ticket key you are given:
 1. Read the ticket (summary, description, acceptance criteria, comments, status, links) through the connected ticket MCP.
 2. `ticket_trace(key)` — commits, files and `path::Qualname` refs that implemented it. Use `get_symbol` on at most 3 refs to confirm behaviour.
-3. Write `{{specs_dir}}/features/<KEY>-<slug>/requirements.md` from the template:
+3. Write `{{features_dir}}/<KEY>-<slug>/requirements.md` from the template:
    - `status:` mapped from the ticket status (Done/Closed/Resolved → shipped, In Review/Code Review/QA → in-review, In Progress/Active → in-progress).
    - `ticket:` link, `source: backfill`.
    - Acceptance criteria: copy the ticket's if present (convert to Given/When/Then); otherwise infer from code and label each `(inferred)`.

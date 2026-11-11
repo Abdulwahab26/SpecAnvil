@@ -79,3 +79,30 @@ def save_config(root: Path, cfg: dict) -> Path:
     path = d / CONFIG_FILE
     path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def features_dir(cfg: dict) -> str:
+    """Where feature specs live: <specs_dir>/features by default; tools with their own spec layout (Kiro) change it."""
+    return (cfg.get("features_dir") or f"{cfg.get('specs_dir', 'specs')}/features").rstrip("/")
+
+
+def discover_root(start: Path | None = None, env: dict | None = None) -> Path:
+    """The project an MCP server should serve, for any client:
+    SPECFORGE_ROOT, then the client's own project variable (Claude Code: CLAUDE_PROJECT_DIR), then the nearest
+    folder above the working directory that holds .specforge/ or .git, then the working directory itself.
+    Values a client left unexpanded (e.g. a literal "${workspaceFolder}") are ignored."""
+    import os
+    env = os.environ if env is None else env
+    for var in ("SPECFORGE_ROOT", "CLAUDE_PROJECT_DIR", "WORKSPACE_FOLDER", "PROJECT_ROOT"):
+        v = (env.get(var) or "").strip()
+        if v and "${" not in v and Path(v).is_dir():
+            return Path(v).resolve()
+    cur = (start or Path.cwd()).resolve()
+    for d in [cur, *cur.parents]:
+        if (d / ".specforge").is_dir():
+            return d
+    for d in [cur, *cur.parents]:
+        if (d / ".git").exists():
+            return d
+    return cur
+

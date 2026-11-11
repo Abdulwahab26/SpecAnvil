@@ -19,7 +19,8 @@ def _root(args) -> Path:
 def cmd_init(args) -> int:
     from .bootstrap import run
     res = run(_root(args), dry_run=args.dry_run, force=args.force, tickets=args.tickets,
-              databases=[d.strip() for d in args.db.split(",")] if args.db else None, app_url=args.app_url, ci=args.ci, offline=args.offline)
+              databases=[d.strip() for d in args.db.split(",")] if args.db else None, app_url=args.app_url, ci=args.ci,
+              offline=args.offline, agents=args.agents)
     if args.json:
         print(json.dumps({k: v for k, v in res.items() if k != "config"}, indent=2, default=str))
         return 0
@@ -42,6 +43,8 @@ def cmd_init(args) -> int:
                        ("tests", "test_frameworks"), ("tickets", "ticket_systems")]:
         print(f"  {label:<10} " + (", ".join(s[key]) or "—"))
     print("  connectors " + ", ".join(res["connectors"]))
+    from .providers import LABELS
+    print("  AI tools   " + ", ".join(LABELS[t] for t in res["agents"]))
     print()
     counts: dict[str, int] = {}
     for action, _ in res["actions"]:
@@ -55,9 +58,68 @@ def cmd_init(args) -> int:
         print("\n  Set these environment variables for the connectors (never commit them):")
         for name, envs in res["env_needed"].items():
             print(f"    {name:<14} {' '.join(envs)}")
+    if res.get("agent_notes"):
+        print("\n  One-time steps in your AI tools:")
+        for n in res["agent_notes"]:
+            print(f"    - {n}")
     if not res["dry_run"]:
-        print("\n  Next: open Claude Code here, then try `/sf:learn` and `/sf:groom <ticket>`.")
+        from .providers import CMD_SYNTAX
+        first = res["agents"][0]
+        how = CMD_SYNTAX[first].format(c="groom")
+        how = f"run {how} <ticket>" if how.startswith(("/", "#")) else f"ask it to use {how} for a ticket"
+        print(f"\n  Next: open {LABELS[first]} here and {how}.")
         print("  Report: .specforge/report.html")
+    return 0
+
+
+def cmd_agents(args) -> int:
+    """List detected / configured AI tools, or set them up: specforge agents [list|add <tools>|all]."""
+    from . import providers as P
+    from .config import load_config
+    root = _root(args)
+    if args.action == "list":
+        cfg = load_config(root)
+        det = P.detect(root)
+        for t in P.ALL:
+            mark = "configured" if t in (cfg.get("agents") or []) else "detected" if t in det else ""
+            print(f"  {t:<9} {P.LABELS[t]:<26} {mark}")
+        return 0
+    from .bootstrap import run
+    cfg = load_config(root)
+    want = "all" if args.action == "all" else ",".join(dict.fromkeys((cfg.get("agents") or []) + (args.tools or "").split(",")))
+    res = run(root, agents=want.strip(","), offline=True)
+    print("Set up: " + ", ".join(P.LABELS[t] for t in res["agents"]))
+    for n in res["agent_notes"]:
+        print(f"  - {n}")
+    return 0
+
+
+def cmd_tool(args) -> int:
+    """CLI bridge to every MCP tool, for agents that can't run local MCP servers (Replit) and for scripts."""
+    import os
+    os.environ.setdefault("SPECFORGE_ROOT", str(_root(args)))
+    os.environ["SPECFORGE_TOOLS"] = "full"
+    from . import server
+    if args.list or not args.name:
+        for name in sorted(server._FUNCS):
+            doc = (server._FUNCS[name].__doc__ or "").strip().splitlines()
+            print(f"  {name:<24} {doc[0][:90] if doc else ''}")
+        return 0
+    try:
+        arguments = json.loads(args.arguments) if args.arguments else {}
+    except json.JSONDecodeError as e:
+        print(f"Arguments must be a JSON object: {e}", file=sys.stderr)
+        return 2
+    fn = server._FUNCS.get(args.name)
+    if fn is None:
+        import difflib
+        print(f"Unknown tool '{args.name}'. Close: {difflib.get_close_matches(args.name, list(server._FUNCS), 5)}", file=sys.stderr)
+        return 2
+    try:
+        print(fn(**arguments))
+    except Exception as e:  # noqa: BLE001 - ToolError and argument errors are user-facing
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -563,9 +625,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--app-url", help="URL of the running app for Playwright")
     p.add_argument("--ci", action="store_true", help="also add a GitHub Actions spec-drift workflow")
     p.add_argument("--offline", action="store_true", help="never download parser grammars (regex fallback)")
+    p.add_argument("--agents", help="AI tools to set up: auto (default: detected), all, or a comma list of "
+                                    "claude,copilot,cursor,augment,windsurf,codex,kiro,gemini,replit")
     p.add_argument("--json", action="store_true")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(fn=cmd_init)
+
+    p = sub.add_parser("agents", help="AI coding tools: list | add <tools> | all")
+    p.add_argument("action", choices=["list", "add", "all"], nargs="?", default="list")
+    p.add_argument("tools", nargs="?", help="comma list for add, e.g. cursor,copilot")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_agents)
+
+    p = sub.add_parser("tool", help="call any MCP tool from the shell: tool <name> '<json args>' | --list")
+    p.add_argument("name", nargs="?")
+    p.add_argument("arguments", nargs="?", help='JSON object, e.g. \'{"query": "create user"}\'')
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_tool)
 
     p = sub.add_parser("index", help="build or refresh the code index")
     p.add_argument("path", nargs="?")

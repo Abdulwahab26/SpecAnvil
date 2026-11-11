@@ -130,7 +130,9 @@ def update_state(root: Path, query: str | None = None, done: list[str] | None = 
 
 
 def existing_feature_keys(root: Path, specs_dir: str = "specs") -> set[str]:
-    d = root / specs_dir / "features"
+    from .config import features_dir, load_config
+    cfg = load_config(root)
+    d = root / (features_dir(cfg) if cfg.get("specs_dir", "specs") == specs_dir else f"{specs_dir}/features")
     if not d.exists():
         return set()
     out = set()

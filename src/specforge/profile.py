@@ -99,7 +99,22 @@ def validate_model(value: str) -> str:
                      "or a full model ID such as claude-opus-5-5.")
 
 
+PROVIDER_MODEL_TOOLS = ("copilot", "augment", "codex")  # tools whose agent/command files accept a model name
+
+
 def _coerce(key: str, raw: str):
+    if key.startswith("providers."):  # providers.<tool>.models.<role>: model names as that tool spells them
+        parts = key.split(".")
+        if len(parts) != 4 or parts[2] != "models":
+            raise ValueError("Use providers.<tool>.models.<role>, e.g. providers.copilot.models.backend")
+        if parts[1] not in PROVIDER_MODEL_TOOLS:
+            raise ValueError(f"Per-tool models are supported for {', '.join(PROVIDER_MODEL_TOOLS)}; "
+                             "other tools use the model picked in the tool itself.")
+        if parts[3] not in ROLES:
+            raise ValueError(f"Unknown role '{parts[3]}'. Roles: {', '.join(ROLES)}")
+        if not raw.strip():
+            raise ValueError("Model name must not be empty")
+        return raw.strip()
     if key.startswith("models."):
         role = key.split(".", 1)[1]
         if role not in ROLES:
@@ -122,8 +137,8 @@ def _coerce(key: str, raw: str):
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
             raise ValueError("backfill.since must be YYYY-MM-DD")
         return raw
-    raise ValueError(f"Unknown setting '{key}'. Settings: models.<role>, backfill.enabled, backfill.statuses, "
-                     "backfill.since, backfill.limit, backfill.batch_size")
+    raise ValueError(f"Unknown setting '{key}'. Settings: models.<role>, providers.<tool>.models.<role>, "
+                     "backfill.enabled, backfill.statuses, backfill.since, backfill.limit, backfill.batch_size")
 
 
 def set_value(key: str, raw: str) -> dict:
@@ -154,3 +169,13 @@ def model_for_agent(agent_name: str, prof: dict) -> str | None:
         if name == agent_name:
             return prof.get("models", {}).get(role)
     return None
+
+
+def provider_model(provider: str, role: str, prof: dict) -> str | None:
+    """Model for a role in a non-Claude tool, only when the user set one (otherwise the tool's own picker applies)."""
+    return ((prof.get("providers") or {}).get(provider, {}).get("models") or {}).get(role)
+
+
+def role_of_agent(agent_name: str) -> str | None:
+    return next((r for r, n in ROLES.items() if n == agent_name), None)
+

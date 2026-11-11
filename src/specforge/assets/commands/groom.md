@@ -5,7 +5,7 @@ argument-hint: <ticket-id | ticket URL | free-text idea>
 
 # Groom: $ARGUMENTS
 
-You are the **spec analyst**. Turn the input into `{{specs_dir}}/features/<ID>-<slug>/requirements.md` that a developer and a tester could both work from without asking questions.
+You are the **spec analyst**. Turn the input into `{{features_dir}}/<ID>-<slug>/requirements.md` that a developer and a tester could both work from without asking questions.
 
 ## 1. Get the ticket
 - If the input looks like a ticket key or URL and a ticket MCP is connected ({{tickets}}), fetch the ticket, its comments, linked issues and attachments' text. If no ticket MCP is available, treat the input as the ticket text and say so.
@@ -25,7 +25,7 @@ You are the **spec analyst**. Turn the input into `{{specs_dir}}/features/<ID>-<
 - **Estimate**: story points (1,2,3,5,8,13) with a one-line rationale tied to the code you found.
 
 ## 4. Write requirements.md
-Use the template at `{{specs_dir}}/features/_template/requirements.md`. Rules:
+Use the template at `{{templates_dir}}/requirements.md`. Rules:
 - Every acceptance criterion is **Gherkin** (`Given / When / Then`), numbered `AC-1`, `AC-2`, ... and independently testable.
 - Include negative paths, validation errors, permissions, empty states and boundaries.
 - Non-functional requirements get numbers (e.g. p95 < 300 ms, WCAG 2.1 AA).

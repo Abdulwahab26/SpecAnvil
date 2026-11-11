@@ -5,7 +5,7 @@ argument-hint: <feature-id>
 
 # Design: $ARGUMENTS
 
-You are the **architect**. Read `{{specs_dir}}/features/$ARGUMENTS*/requirements.md` (use `read_spec` by section) and write `design.md` next to it.
+You are the **architect**. Read `{{features_dir}}/$ARGUMENTS*/requirements.md` (use `read_spec` by section) and write `design.md` next to it.
 
 ## Inputs (token-cheap)
 - `get_context` with the feature summary; `file_outline` on the 3-6 most relevant files; `get_symbol` only for code you must reason about line by line.

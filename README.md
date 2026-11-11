@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Abdulwahab26/Specforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdulwahab26/Specforge/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
-**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything Claude Code needs to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 13-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
+**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything your AI coding tool needs (Claude Code, GitHub Copilot, Cursor, Augment Code, Windsurf, Codex, Kiro, Gemini CLI or Replit) to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 13-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
 
 Design notes and decision records: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · measured numbers: [docs/BENCHMARKS.md](docs/BENCHMARKS.md) · head-to-head: [docs/COMPARISON.md](docs/COMPARISON.md)
 
@@ -27,6 +27,24 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 | Network calls during indexing | **none** (tested with sockets blocked) |
 
 ---
+
+## Works with your AI coding tool
+
+`specforge init` detects which AI coding tools the repo already uses (from their config folders) and writes the same setup in each tool's own formats: always-on rules, the lifecycle workflows, role agents, skills and the MCP connection. Pick tools explicitly with `--agents cursor,copilot` or `--agents all`.
+
+| Tool | Run a workflow | Files SpecForge writes |
+|---|---|---|
+| Claude Code | `/sf:groom` | `CLAUDE.md`, `.claude/commands`, `.claude/agents`, `.claude/skills`, `.mcp.json` |
+| GitHub Copilot | `/sf-groom` | `AGENTS.md`, `.github/prompts`, `.github/agents`, `.github/skills`, `.vscode/mcp.json` |
+| Cursor | `/sf-groom` | `AGENTS.md`, `.cursor/commands`, `.cursor/rules/*.mdc`, `.cursor/mcp.json` |
+| Augment Code | `/sf:groom` | `AGENTS.md`, `.augment/commands`, `.augment/skills`, MCP import file |
+| Windsurf / Devin Local | `sf-groom` skill | `AGENTS.md`, `.agents/skills`, `.devin/mcp_config.json` |
+| OpenAI Codex | `sf-groom` skill | `AGENTS.md`, `.agents/skills`, `.codex/agents`, `.codex/config.toml` |
+| Kiro | `#sf-groom` | `AGENTS.md`, `.kiro/steering`, feature specs in `.kiro/specs/`, `.kiro/settings/mcp.json` |
+| Gemini CLI | `/sf:groom` | `GEMINI.md`, `.gemini/commands/*.toml`, `.gemini/settings.json` |
+| Replit Agent | groom playbook | `replit.md`, `.specforge/playbooks`; tools via `specforge tool <name> '<json>'` (no local MCP) |
+
+Details, per-tool limits and the documentation each format was checked against: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ## What `specforge init` creates
 
@@ -168,7 +186,9 @@ specforge doctor
 ## CLI
 
 ```
-specforge init [path] [--dry-run] [--offline] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
+specforge init [path] [--agents auto|all|cursor,copilot,...] [--dry-run] [--offline] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
+specforge agents list | add <tools> | all     # AI coding tools to set up
+specforge tool <name> '<json args>' | --list  # any MCP tool from the shell (for tools without local MCP)
 specforge profile [set|unset|sync] ...   # your models per role and backfill settings
 specforge tests surface|validate|status <module>
 specforge grammars [--list]              # explicit, one-time grammar download

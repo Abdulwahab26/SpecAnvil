@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+- **Any AI coding tool**: `specforge init` detects Claude Code, GitHub Copilot, Cursor, Augment Code, Windsurf / Devin Local, OpenAI Codex, Kiro, Gemini CLI and Replit from their config folders (or `--agents ...`) and writes rules, workflows, role agents, skills and MCP config in each tool's native format; `specforge agents list | add | all`.
+- **Specs per tool**: Kiro feature specs in `.kiro/specs/<feature>/` plus seeded steering (product, tech, structure); `features_dir` / `templates_dir` config; drift, `list_specs` and `read_spec` cover both folders.
+- **No-MCP tools**: `specforge tool <name> '<json>'` CLI bridge to every tool (used by Replit's `replit.md`).
+- **MCP root discovery** for any client (env, client project variable, nearest `.specforge`/`.git`; unexpanded variables ignored).
+- **Per-tool models**: `providers.<tool>.models.<role>` for Copilot, Augment and Codex.
+- `docs/PROVIDERS.md` (support matrix, limits, sources); 53 unit tests.
+
 ## 0.6.0
 - **Runtime traces**: `import_runtime_trace` (OTLP JSON / JSONL / gzip, flat spans; mapped by code attributes, HTTP route with app prefixes, or name), `runtime_hot_paths` (hits, p50 / p95 / max ms), `runtime_unused`; latency feeds `file_risk`. CLI: `specforge insight trace-import | hot | unused`.
 - **Ranking regret**: local query → fetch ledger; `suggest_corrections` (zero results, reformulations, reads outside top 5, vocabulary gaps → synonym rules, `apply=True`); config synonyms used by search and `get_context`; `tune_weights` grid-searches fusion weights on an eval file or the ledger.

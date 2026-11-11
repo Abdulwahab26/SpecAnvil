@@ -16,5 +16,5 @@ argument-hint: [statuses e.g. "Done,In Review"] [--since YYYY-MM-DD] [--limit N]
 4. **Resume**: `backfill_progress()` returns keys already done and keys that already have specs; skip both. Record the query with `backfill_progress(query=...)`.
 5. **Cross-check with the repo**: `ticket_keys()` shows which keys appear in git history; prioritise those (they have code to link).
 6. **Process in batches** of `backfill.batch_size`: run up to 3 **ticket-archaeologist** subagents in parallel, each with its list of keys. After each batch, call `backfill_progress(done=[...], failed={key: reason}, skipped=[...])`.
-7. **Index**: update `{{specs_dir}}/features/_index.md` with one row per ticket: key, title, status, spec link, linked refs count.
+7. **Index**: update `{{features_dir}}/_index.md` with one row per ticket: key, title, status, spec link, linked refs count.
 8. **Report**: counts by status, specs written, failures, and tickets with no linked code (candidates for `/sf:learn` or human review). Suggest `specforge drift --lock` after a human review.

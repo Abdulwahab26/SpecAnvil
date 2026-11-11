@@ -18,12 +18,21 @@ def specs_root(root: Path) -> Path:
     return root / load_config(root).get("specs_dir", "specs")
 
 
+def spec_roots(root: Path) -> list[Path]:
+    """The specs folder plus the feature-specs folder when a tool keeps features elsewhere (Kiro: .kiro/specs)."""
+    from .config import features_dir
+    cfg = load_config(root)
+    roots = [specs_root(root)]
+    fd = root / features_dir(cfg)
+    if not str(fd.resolve()).startswith(str(roots[0].resolve())):
+        roots.append(fd)
+    return [r for r in roots if r.exists()]
+
+
 def list_specs(root: Path) -> list[dict]:
-    sr = specs_root(root)
-    if not sr.exists():
-        return []
     out = []
-    for p in sorted(sr.rglob("*.md")):
+    files = sorted({p for sr in spec_roots(root) for p in sr.rglob("*.md")})
+    for p in files:
         text = p.read_text(encoding="utf-8", errors="ignore")
         title = next((ln.lstrip("# ").strip() for ln in text.splitlines() if ln.startswith("# ")), p.stem)
         status = re.search(r"(?mi)^status:\s*(\S+)", text)
@@ -75,7 +84,8 @@ def _resolve(ix: CodeIndex, path: str, qual: str):
 def _drift_specs(root: Path) -> list[dict]:
     """Specs that are checked: everything except templates and the specs README."""
     return [s for s in list_specs(root)
-            if "/_template/" not in s["path"] and not s["path"].endswith("/README.md")]
+            if "/_template/" not in s["path"] and "/templates/" not in s["path"]
+            and not s["path"].endswith("/README.md")]
 
 
 def drift(root: Path, ix: CodeIndex) -> dict:

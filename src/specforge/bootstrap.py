@@ -14,7 +14,7 @@ from importlib import resources
 from pathlib import Path
 
 from . import __version__
-from .config import load_config, save_config
+from .config import features_dir, load_config, save_config
 from .connectors import env_requirements, recommend, write_mcp_json
 from .detect import analyze_conventions, detect_stack
 from .index import CodeIndex
@@ -74,7 +74,8 @@ def _values(root: Path, cfg: dict, stack: dict) -> dict:
     cmds = stack.get("commands", {})
     missing = "(not detected — set in .specforge/config.json)"
     return {
-        "project_name": root.name, "specs_dir": cfg["specs_dir"],
+        "project_name": root.name, "specs_dir": cfg["specs_dir"], "features_dir": features_dir(cfg),
+        "templates_dir": cfg.get("templates_dir") or f"{features_dir(cfg)}/_template",
         "test_cmd": cmds.get("test", "the project's test command " + missing),
         "lint_cmd": cmds.get("lint", "the project's linter " + missing),
         "build_cmd": cmds.get("build", missing), "dev_cmd": cmds.get("dev", "the dev server command " + missing),
@@ -260,7 +261,7 @@ def _claude_md_block(values: dict, stack: dict) -> str:
     return f"""{MARK_START}
 ## Spec-driven development (SpecForge)
 
-Specs in `{values['specs_dir']}/` are the source of truth: `project.md`, `conventions.md`, `modules/`, `features/<ID>/`.
+Specs in `{values['specs_dir']}/` are the source of truth: `project.md`, `conventions.md`, `modules/`; features in `{values['features_dir']}/<ID>/`.
 Workflow: `/sf:groom` → `/sf:design` → `/sf:plan` → `/sf:be` + `/sf:fe` → `/sf:db` → `/sf:qa` → `/sf:e2e` → `/sf:verify` → `/sf:ship`
 (or `/sf:flow <ticket>` to run the agent team end to end; `/sf:spec` for small changes; `/sf:status` for the board).
 Unit tests: `/sf:test-plan <module>` (planner model) → `/sf:test-run <module>` (executor model). History: `/sf:backfill`.
@@ -366,11 +367,42 @@ def _merge_settings(root: Path) -> str:
 
 # ---------------------------------------------------------------------------- main entry
 
+def _bundle(root: Path, values: dict, stack: dict, skills: dict[str, str], connectors: list[str],
+            keep: set[str] | None = None):
+    """Provider-neutral content (see providers.py) built from the same assets Claude Code gets."""
+    from . import providers as P
+    from .connectors import catalog
+    from .profile import effective, role_of_agent
+    cmds = []
+    for c in COMMANDS:
+        meta, body = P.split_frontmatter(_fill(asset(f"commands/{c}.md"), values))
+        cmds.append(P.Command(c, meta.get("description", c), meta.get("argument-hint", ""), body))
+    agents = []
+    for f in sorted(asset_dir("agents").iterdir(), key=lambda x: x.name):
+        if f.name.endswith(".md"):
+            meta, body = P.split_frontmatter(_fill(f.read_text(encoding="utf-8"), values))
+            agents.append(P.Agent(f.name[:-3], meta.get("description", ""), body, role_of_agent(f.name[:-3])))
+    sk = []
+    for name, content in skills.items():
+        meta, body = P.split_frontmatter(content)
+        sk.append(P.Skill(name, meta.get("description", name), body, name in (keep or set())))
+    cat = catalog()
+    servers = {n: cat[n]["server"] for n in connectors if n in cat}
+    return P.Bundle(values=values, stack=stack, commands=cmds, agents=agents, skills=sk, servers=servers,
+                    rules_core="", profile=effective(root))
+
+
 def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | None = None,
         databases: list[str] | None = None, app_url: str | None = None, max_modules: int = 30,
-        ci: bool = False, offline: bool = False) -> dict:
+        ci: bool = False, offline: bool = False, agents: str | None = None) -> dict:
+    from . import providers as P
     root = root.resolve()
     cfg = load_config(root)
+    tools = P.resolve(root, agents, cfg.get("agents"))
+    cfg["agents"] = tools
+    if "kiro" in tools and not cfg.get("features_dir"):  # Kiro keeps feature specs in its own layout
+        cfg["features_dir"] = ".kiro/specs"
+        cfg.setdefault("templates_dir", f"{cfg.get('specs_dir', 'specs')}/templates")
     ix = CodeIndex(root)
     index_stats = ix.build()
     grammars: dict = {"skipped": "offline"} if offline else {}
@@ -411,34 +443,47 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
     for m in ix.modules()[:max_modules]:
         plan.write(f"{sd}/modules/{_slug(m['m'])}.md", _module_md(ix, m["m"]))
     for t in ("requirements", "design", "tasks", "test-cases"):
-        plan.write(f"{sd}/features/_template/{t}.md", _fill(asset(f"specs/_template/{t}.md"), values))
+        plan.write(f"{values['templates_dir']}/{t}.md", _fill(asset(f"specs/_template/{t}.md"), values))
 
-    # commands + agents (refreshed on every run so upgrades flow through)
-    for c in COMMANDS:
-        plan.write(f".claude/commands/sf/{c}.md", _fill(asset(f"commands/{c}.md"), values), overwrite=True)
-    for rel, content in render_agents(root, values).items():
-        plan.write(rel, content, overwrite=True)
-
-    # skills: static + generated per project
+    # skills: static + generated per project (refreshed on every run so upgrades flow through)
+    skills: dict[str, str] = {}
+    keep_skills: set[str] = set()  # generated from the repo once, then owned by the team
     for s in ("code-navigation", "spec-writing", "test-case-design", "unit-test-planning"):
-        plan.write(f".claude/skills/{s}/SKILL.md", _fill(asset(f"skills/{s}/SKILL.md"), values), overwrite=True)
+        skills[s] = _fill(asset(f"skills/{s}/SKILL.md"), values)
     if stack["has_frontend"] or cfg.get("e2e") == "playwright":
-        plan.write(".claude/skills/playwright-e2e/SKILL.md", asset("skills/playwright-e2e/SKILL.md"), overwrite=True)
+        skills["playwright-e2e"] = asset("skills/playwright-e2e/SKILL.md")
     if stack["has_backend"] or cfg["databases"]:
-        plan.write(".claude/skills/db-optimization/SKILL.md", _db_skill(cfg["databases"]), overwrite=True)
+        skills["db-optimization"] = _db_skill(cfg["databases"])
     pname = _slug(root.name)
-    plan.write(f".claude/skills/{pname}-conventions/SKILL.md", _conventions_skill(pname, conv, stack, values))
+    skills[f"{pname}-conventions"] = _conventions_skill(pname, conv, stack, values)
+    keep_skills.add(f"{pname}-conventions")
     if stack["has_frontend"]:
-        plan.write(".claude/skills/frontend-patterns/SKILL.md", _stack_skill("frontend", pname, stack, conv, values))
+        skills["frontend-patterns"] = _stack_skill("frontend", pname, stack, conv, values)
+        keep_skills.add("frontend-patterns")
     if stack["has_backend"]:
-        plan.write(".claude/skills/backend-patterns/SKILL.md", _stack_skill("backend", pname, stack, conv, values))
+        skills["backend-patterns"] = _stack_skill("backend", pname, stack, conv, values)
+        keep_skills.add("backend-patterns")
+
+    if "claude" in tools:
+        for c in COMMANDS:
+            plan.write(f".claude/commands/sf/{c}.md", _fill(asset(f"commands/{c}.md"), values), overwrite=True)
+        for rel, content in render_agents(root, values).items():
+            plan.write(rel, content, overwrite=True)
+        for name, content in skills.items():
+            plan.write(f".claude/skills/{name}/SKILL.md", content, overwrite=name not in keep_skills)
+
+    # every other AI coding tool in use: the same content in that tool's own formats
+    other_files = P.render(root, tools, _bundle(root, values, stack, skills, connectors, keep_skills),
+                           _project_md(root, stack, ix, connectors), _conventions_md(conv, stack))
+    for rel, content, mode in other_files:
+        plan.write(rel, content, overwrite=(mode == "write"))
 
     if ci:
         plan.write(".github/workflows/specforge.yml", asset("ci/specforge.yml"))
 
-    # Claude config
-    plan.write("CLAUDE.md", _merge_claude_md(root, _claude_md_block(values, stack)), overwrite=True)
-    plan.write(".claude/settings.json", _merge_settings(root), overwrite=True)
+    if "claude" in tools:
+        plan.write("CLAUDE.md", _merge_claude_md(root, _claude_md_block(values, stack)), overwrite=True)
+        plan.write(".claude/settings.json", _merge_settings(root), overwrite=True)
     gi = root / ".gitignore"
     gi_text = gi.read_text(encoding="utf-8") if gi.exists() else ""
     if ".specforge/index.db" not in gi_text:
@@ -450,11 +495,13 @@ def run(root: Path, dry_run: bool = False, force: bool = False, tickets: str | N
         cfg["connectors"] = connectors
         save_config(root, cfg)
         plan.actions.append(("update", ".specforge/config.json"))
-        _, added = write_mcp_json(root, connectors)
-        plan.actions.append(("update", ".mcp.json"))
+        if "claude" in tools:
+            _, added = write_mcp_json(root, connectors)
+            plan.actions.append(("update", ".mcp.json"))
         lock_specs(root, ix)
         from .report import write_report
         plan.actions.append(("create", write_report(root, ix).relative_to(root).as_posix()))
 
     return {"root": str(root), "dry_run": dry_run, "index": index_stats, "grammars": grammars, "stack": stack, "connectors": connectors,
-            "env_needed": env_needed, "actions": plan.actions, "config": cfg}
+            "env_needed": env_needed, "actions": plan.actions, "config": cfg, "agents": tools,
+            "agent_notes": P.setup_notes(tools)}

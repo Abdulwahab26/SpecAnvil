@@ -11,7 +11,6 @@ import json
 import os
 import subprocess
 import time
-from pathlib import Path
 
 try:
     from mcp.server.mcpserver import Context
@@ -26,7 +25,7 @@ from . import analysis as _analysis
 from . import profile as _profile
 from . import testing as _testing
 from . import tickets as _tickets
-from .config import load_config
+from .config import discover_root, load_config
 from .docs import DocEngine
 from .index import CodeIndex
 from .session import Session
@@ -40,7 +39,7 @@ find by name/meaning; file_outline -> structure of one file; get_symbol -> exact
 find_references -> usages. Specs live in the specs folder: read_spec with a section to load only what
 you need. Read a full file only when you are about to edit most of it."""
 
-ROOT = Path(os.environ.get("SPECFORGE_ROOT") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()).resolve()
+ROOT = discover_root()  # works for any MCP client: env var, client project dir, or nearest .specforge/.git
 mcp = _Server("specforge", instructions=INSTRUCTIONS)
 _ix: CodeIndex | None = None
 _last_refresh = 0.0
@@ -344,10 +343,12 @@ def list_specs_tool() -> str:
 @mcp.tool()
 def read_spec(path: str, section: str | None = None) -> str:
     """Read a spec. Without section: headings only. With section (heading text): just that section."""
+    from .specs import spec_roots
     p = (ROOT / path).resolve()
-    sr = specs_root(ROOT).resolve()
-    if not str(p).startswith(str(sr)) or not p.exists():
-        raise ToolError(f"Spec not found under {sr.name}/: {path}. Call list_specs to see available specs.")
+    roots = [r.resolve() for r in spec_roots(ROOT)] or [specs_root(ROOT).resolve()]
+    if not any(str(p).startswith(str(r)) for r in roots) or not p.exists():
+        raise ToolError(f"Spec not found under {', '.join(r.name + '/' for r in roots)}: {path}. "
+                        "Call list_specs to see available specs.")
     text = p.read_text(encoding="utf-8", errors="ignore")
     full = estimate_tokens(text)
     if section is None:
