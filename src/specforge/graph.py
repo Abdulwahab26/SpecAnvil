@@ -443,7 +443,8 @@ def _word_counts(ix, names: list[str]) -> Counter:
                 cmd += ["-e", re.escape(n)]
             cmd += ["--", "."]
             try:
-                proc = subprocess.run(cmd, cwd=ix.root, capture_output=True, text=True, timeout=120, errors="replace")
+                proc = subprocess.run(cmd, cwd=ix.root, capture_output=True, text=True, timeout=120,
+                                      encoding="utf-8", errors="replace")
                 if proc.returncode in (0, 1):
                     c.update(proc.stdout.split())
                     continue

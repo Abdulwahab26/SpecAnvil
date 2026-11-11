@@ -882,30 +882,30 @@ def test_init_for_every_tool_writes_valid_native_files(tmp_path, monkeypatch):
             "specs/templates/requirements.md"]
     missing = [m for m in must if not (root / m).exists()]
     assert not missing, missing
-    assert json.loads((root / ".vscode/mcp.json").read_text())["servers"]["specforge"]["env"]["SPECFORGE_ROOT"] == "${workspaceFolder}"
-    assert "specforge" in json.loads((root / ".cursor/mcp.json").read_text())["mcpServers"]
+    assert json.loads((root / ".vscode/mcp.json").read_text(encoding="utf-8"))["servers"]["specforge"]["env"]["SPECFORGE_ROOT"] == "${workspaceFolder}"
+    assert "specforge" in json.loads((root / ".cursor/mcp.json").read_text(encoding="utf-8"))["mcpServers"]
     if tomllib:
-        assert tomllib.loads((root / ".codex/config.toml").read_text())["mcp_servers"]["specforge"]["command"] == "specforge-mcp"
-        g = tomllib.loads((root / ".gemini/commands/sf/groom.toml").read_text())
+        assert tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))["mcp_servers"]["specforge"]["command"] == "specforge-mcp"
+        g = tomllib.loads((root / ".gemini/commands/sf/groom.toml").read_text(encoding="utf-8"))
         assert "{{args}}" in g["prompt"] and g["description"]
-        assert tomllib.loads((root / ".codex/agents/sf-architect.toml").read_text())["name"] == "sf-architect"
+        assert tomllib.loads((root / ".codex/agents/sf-architect.toml").read_text(encoding="utf-8"))["name"] == "sf-architect"
     for f in [root / ".github/prompts/sf-groom.prompt.md", root / ".github/agents/sf-architect.agent.md",
               root / ".cursor/rules/code-navigation.mdc", root / ".kiro/steering/code-navigation.md",
               root / ".agents/skills/sf-groom/SKILL.md"]:
-        meta, body = split_frontmatter(f.read_text())
+        meta, body = split_frontmatter(f.read_text(encoding="utf-8"))
         assert meta and body.strip(), f
         for v in meta.values():  # quoted scalars are JSON strings, so they must decode cleanly
             if v.startswith('"'):
                 json.loads(v)
-    skill, _ = split_frontmatter((root / ".agents/skills/sf-groom/SKILL.md").read_text())
+    skill, _ = split_frontmatter((root / ".agents/skills/sf-groom/SKILL.md").read_text(encoding="utf-8"))
     assert skill["name"] == "sf-groom" and len(json.loads(skill["description"])) <= 1024
-    assert "inclusion: manual" in (root / ".kiro/steering/sf-groom.md").read_text()
-    assert ".kiro/specs/" in (root / ".github/prompts/sf-groom.prompt.md").read_text()  # Kiro chose the feature layout
-    assert "specforge tool" in (root / "replit.md").read_text()
+    assert "inclusion: manual" in (root / ".kiro/steering/sf-groom.md").read_text(encoding="utf-8")
+    assert ".kiro/specs/" in (root / ".github/prompts/sf-groom.prompt.md").read_text(encoding="utf-8")  # Kiro chose the feature layout
+    assert "specforge tool" in (root / "replit.md").read_text(encoding="utf-8")
     for d in (".github", ".cursor", ".kiro", ".codex"):
         for f in (root / d).rglob("*"):
             if f.is_file() and f.suffix in (".md", ".mdc", ".toml"):
-                t = f.read_text()
+                t = f.read_text(encoding="utf-8")
                 assert ".claude/" not in t and "$ARGUMENTS" not in t and "/sf:" not in t, f
 
 
@@ -919,12 +919,12 @@ def test_init_only_for_detected_tool_and_user_content_kept(tmp_path, monkeypatch
     res = run(root, offline=True)
     assert res["agents"] == ["cursor"]
     assert not (root / ".claude").exists() and not (root / "CLAUDE.md").exists() and not (root / ".mcp.json").exists()
-    servers = json.loads((root / ".cursor/mcp.json").read_text())["mcpServers"]
+    servers = json.loads((root / ".cursor/mcp.json").read_text(encoding="utf-8"))["mcpServers"]
     assert servers["mine"] == {"command": "my-server"} and "specforge" in servers
-    agents_md = (root / "AGENTS.md").read_text()
+    agents_md = (root / "AGENTS.md").read_text(encoding="utf-8")
     assert agents_md.startswith("# Team notes") and "Keep PRs small." in agents_md and "/sf-groom" in agents_md
     run(root, offline=True)  # re-run: block replaced, not duplicated
-    assert (root / "AGENTS.md").read_text().count("specforge:start") == 1
+    assert (root / "AGENTS.md").read_text(encoding="utf-8").count("specforge:start") == 1
 
 
 def test_root_discovery_for_any_client(tmp_path):
@@ -947,8 +947,8 @@ def test_provider_models_in_profile(tmp_path, monkeypatch):
         profile.set_value("providers.cursor.models.architect", "x")
     root = _tool_repo(tmp_path)
     run(root, agents="copilot", offline=True)
-    assert 'model: "Claude Opus 4.5"' in (root / ".github/agents/sf-architect.agent.md").read_text()
-    assert "model:" not in (root / ".github/agents/sf-reviewer.agent.md").read_text()
+    assert 'model: "Claude Opus 4.5"' in (root / ".github/agents/sf-architect.agent.md").read_text(encoding="utf-8")
+    assert "model:" not in (root / ".github/agents/sf-reviewer.agent.md").read_text(encoding="utf-8")
 
 
 def test_cli_tool_bridge(tmp_path):

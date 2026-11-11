@@ -19,7 +19,7 @@ TICKET_RX = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d+\b|AB#\d+|(?<![\w/])#\d{1,6}\b"
 def _git(ix: CodeIndex, *args: str, timeout: int = 60) -> str:
     try:
         return subprocess.run(["git", *args], cwd=ix.root, capture_output=True, text=True, timeout=timeout,
-                              errors="replace").stdout
+                              encoding="utf-8", errors="replace").stdout
     except (OSError, subprocess.SubprocessError):
         return ""
 

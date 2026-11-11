@@ -284,7 +284,8 @@ def update_milestone(root: Path, module: str, milestone_id: str, status: str, no
         quoted = subprocess.list2cmdline([test_file]) if os.name == "nt" else shlex.quote(test_file)
         cmd = plan["test_command"].replace("{test_file}", quoted)
         try:
-            proc = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True, timeout=timeout,
+                                  encoding="utf-8", errors="replace")
             passed, tail = proc.returncode == 0, (proc.stdout + proc.stderr)[-1500:]
         except subprocess.TimeoutExpired:
             passed, tail = False, f"timed out after {timeout}s"

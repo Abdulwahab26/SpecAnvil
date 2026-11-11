@@ -144,7 +144,8 @@ def _match_dep(sig: str, deps: set[str]) -> bool:
 
 def _git(root: Path, *args: str) -> str:
     try:
-        return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=20).stdout
+        return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=20,
+                              encoding="utf-8", errors="replace").stdout
     except (OSError, subprocess.SubprocessError):
         return ""
 

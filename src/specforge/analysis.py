@@ -13,7 +13,7 @@ from .testing import BRANCH_RX
 def churn(ix: CodeIndex, days: int = 180) -> Counter:
     try:
         out = subprocess.run(["git", "log", f"--since={days} days ago", "--numstat", "--format="], cwd=ix.root,
-                             capture_output=True, text=True, timeout=60, errors="replace").stdout
+                             capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace").stdout
     except (OSError, subprocess.SubprocessError):
         return Counter()
     c: Counter = Counter()

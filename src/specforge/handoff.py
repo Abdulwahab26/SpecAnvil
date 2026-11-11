@@ -32,7 +32,7 @@ def _slug(s: str) -> str:
 def _git(ix: CodeIndex, *args: str) -> str:
     try:
         return subprocess.run(["git", *args], cwd=ix.root, capture_output=True, text=True, timeout=10,
-                              stdin=subprocess.DEVNULL).stdout.strip()
+                              encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
 
