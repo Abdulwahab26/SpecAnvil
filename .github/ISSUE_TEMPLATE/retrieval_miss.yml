@@ -1,0 +1,30 @@
+name: Search or context miss
+description: A search or get_context call did not return the code it should have
+labels: [retrieval]
+body:
+  - type: input
+    id: query
+    attributes:
+      label: Query or task text
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: Symbol that should have been returned
+      placeholder: src/orders/service.py::OrderService.create
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Public repo and commit (if any)
+  - type: textarea
+    id: got
+    attributes:
+      label: What was returned instead
+      render: text
+  - type: input
+    id: language
+    attributes:
+      label: Language and framework

@@ -53,6 +53,7 @@ def trace(root: Path, ix: CodeIndex, key: str, max_commits: int = 30) -> dict:
     pattern = re.escape(key) + (r"\b" if key[-1].isdigit() else "")
     log = _git(root, "log", "--all", "-E", "-i", f"--grep={pattern}", f"-{max_commits}",
                "--format=%H%x1f%ad%x1f%an%x1f%s", "--date=short")
+    files: dict
     commits, files, symbols = [], defaultdict(int), defaultdict(set)
     for line in log.splitlines():
         parts = line.split("\x1f")

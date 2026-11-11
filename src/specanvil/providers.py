@@ -3,17 +3,17 @@
 One provider-neutral bundle (rules, lifecycle commands, role agents, skills, MCP servers) is translated per tool:
 
   tool      always-on rules            commands / workflows            role agents              skills                  MCP config
-  claude    CLAUDE.md                  .claude/commands/sf/*.md        .claude/agents/*.md      .claude/skills          .mcp.json
+  claude    CLAUDE.md                  .claude/commands/sa/*.md        .claude/agents/*.md      .claude/skills          .mcp.json
             (+ hooks: secret guard, re-index; Cursor gets .cursor/hooks.json, Copilot .github/hooks/specanvil.json)
-  copilot   AGENTS.md (+ pointer in    .github/prompts/sf-*.prompt.md  .github/agents/          .github/skills          .vscode/mcp.json ("servers")
-            .github/copilot-instructions.md)                           sf-*.agent.md
-  cursor    AGENTS.md                  .cursor/commands/sf-*.md        (roles live in commands) .cursor/rules/*.mdc     .cursor/mcp.json
-  augment   AGENTS.md                  .augment/commands/sf/*.md       (roles live in commands) .augment/skills         importable JSON (Settings > MCP)
-  windsurf  AGENTS.md                  .agents/skills/sf-*             (roles live in commands) .agents/skills          .devin/mcp_config.json
-  codex     AGENTS.md                  .agents/skills/sf-*             .codex/agents/sf-*.toml  .agents/skills          .codex/config.toml (trusted)
-  kiro      AGENTS.md + .kiro/steering .kiro/steering/sf-*.md (manual) (roles live in commands) steering (auto)         .kiro/settings/mcp.json
+  copilot   AGENTS.md (+ pointer in    .github/prompts/sa-*.prompt.md  .github/agents/          .github/skills          .vscode/mcp.json ("servers")
+            .github/copilot-instructions.md)                           sa-*.agent.md
+  cursor    AGENTS.md                  .cursor/commands/sa-*.md        (roles live in commands) .cursor/rules/*.mdc     .cursor/mcp.json
+  augment   AGENTS.md                  .augment/commands/sa/*.md       (roles live in commands) .augment/skills         importable JSON (Settings > MCP)
+  windsurf  AGENTS.md                  .agents/skills/sa-*             (roles live in commands) .agents/skills          .devin/mcp_config.json
+  codex     AGENTS.md                  .agents/skills/sa-*             .codex/agents/sa-*.toml  .agents/skills          .codex/config.toml (trusted)
+  kiro      AGENTS.md + .kiro/steering .kiro/steering/sa-*.md (manual) (roles live in commands) steering (auto)         .kiro/settings/mcp.json
             (product/tech/structure); feature specs in .kiro/specs/<feature>/
-  gemini    GEMINI.md                  .gemini/commands/sf/*.toml      (roles live in commands) .agents/skills          .gemini/settings.json
+  gemini    GEMINI.md                  .gemini/commands/sa/*.toml      (roles live in commands) .agents/skills          .gemini/settings.json
   replit    replit.md                  .specanvil/playbooks/*.md       (roles live in commands) playbooks               none: CLI bridge `specanvil tool`
 
 Formats were checked against each tool's documentation (Nov 2026); see docs/PROVIDERS.md for sources.
@@ -72,7 +72,7 @@ class Command:
     name: str          # "groom"
     description: str
     argument_hint: str
-    body: str          # uses $ARGUMENTS, /sf:<cmd>, .claude/... paths (the Claude dialect; translated per tool)
+    body: str          # uses $ARGUMENTS, /sa:<cmd>, .claude/... paths (the Claude dialect; translated per tool)
 
 
 @dataclass
@@ -118,15 +118,15 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
 # ---------------------------------------------------------------------------- per-tool dialect
 
 CMD_SYNTAX = {  # how a person runs the "groom" workflow in each tool
-    "claude": "/sf:{c}", "augment": "/sf:{c}", "gemini": "/sf:{c}",
-    "copilot": "/sf-{c}", "cursor": "/sf-{c}", "kiro": "#sf-{c}",
-    "codex": "the sf-{c} skill", "windsurf": "the sf-{c} skill", "replit": "the {c} playbook",
+    "claude": "/sa:{c}", "augment": "/sa:{c}", "gemini": "/sa:{c}",
+    "copilot": "/sa-{c}", "cursor": "/sa-{c}", "kiro": "#sa-{c}",
+    "codex": "the sa-{c} skill", "windsurf": "the sa-{c} skill", "replit": "the {c} playbook",
 }
 CMD_FILE = {
-    "claude": ".claude/commands/sf/{c}.md", "augment": ".augment/commands/sf/{c}.md",
-    "gemini": ".gemini/commands/sf/{c}.toml", "copilot": ".github/prompts/sf-{c}.prompt.md",
-    "cursor": ".cursor/commands/sf-{c}.md", "kiro": ".kiro/steering/sf-{c}.md",
-    "codex": ".agents/skills/sf-{c}/SKILL.md", "windsurf": ".agents/skills/sf-{c}/SKILL.md",
+    "claude": ".claude/commands/sa/{c}.md", "augment": ".augment/commands/sa/{c}.md",
+    "gemini": ".gemini/commands/sa/{c}.toml", "copilot": ".github/prompts/sa-{c}.prompt.md",
+    "cursor": ".cursor/commands/sa-{c}.md", "kiro": ".kiro/steering/sa-{c}.md",
+    "codex": ".agents/skills/sa-{c}/SKILL.md", "windsurf": ".agents/skills/sa-{c}/SKILL.md",
     "replit": ".specanvil/playbooks/{c}.md",
 }
 SKILL_DIR = {"claude": ".claude/skills", "copilot": ".github/skills", "augment": ".augment/skills",
@@ -143,11 +143,11 @@ def translate(text: str, tool: str) -> str:
     """Rewrite the Claude-dialect asset text for one tool: command syntax, file paths, argument placeholder."""
     if tool == "claude":
         return text
-    text = re.sub(r"\.claude/commands/sf/([\w-]+)\.md", lambda m: CMD_FILE[tool].format(c=m.group(1)), text)
+    text = re.sub(r"\.claude/commands/sa/([\w-]+)\.md", lambda m: CMD_FILE[tool].format(c=m.group(1)), text)
     text = text.replace(".claude/skills/", SKILL_DIR[tool] + "/")
     text = text.replace(".claude/agents/", ".github/agents/" if tool == "copilot" else
                         ".codex/agents/" if tool == "codex" else "the role sections of each workflow/")
-    text = re.sub(r"/sf:([\w-]+)", lambda m: CMD_SYNTAX[tool].format(c=m.group(1)), text)
+    text = re.sub(r"/sa:([\w-]+)", lambda m: CMD_SYNTAX[tool].format(c=m.group(1)), text)
     text = text.replace("$ARGUMENTS", ARGS[tool])
     if tool not in HAS_SUBAGENTS:
         text = re.sub(r"\bsub-?agents?\b", "a separate pass", text)
@@ -269,24 +269,24 @@ def _merge_json(path: Path, key: str, servers: dict) -> str:
 
 
 def mcp_files(root: Path, tool: str, servers: dict) -> list[tuple[str, str, str]]:
-    sf = {"specanvil": {"command": "specanvil-mcp", "args": []}}
+    own = {"specanvil": {"command": "specanvil-mcp", "args": []}}
     others = {k: v for k, v in servers.items() if k != "specanvil"}
     if tool == "copilot":
-        conf = {k: {"type": "stdio", **_env_style(v, "env:")} for k, v in {**sf, **others}.items()}
+        conf = {k: {"type": "stdio", **_env_style(v, "env:")} for k, v in {**own, **others}.items()}
         conf["specanvil"]["env"] = {"SPECANVIL_ROOT": "${workspaceFolder}"}
         return [(".vscode/mcp.json", _merge_json(root / ".vscode/mcp.json", "servers", conf), "write")]
     if tool == "cursor":
-        conf = {k: _env_style(v, "env:") for k, v in {**sf, **others}.items()}
+        conf = {k: _env_style(v, "env:") for k, v in {**own, **others}.items()}
         conf["specanvil"]["env"] = {"SPECANVIL_ROOT": "${workspaceFolder}"}
         return [(".cursor/mcp.json", _merge_json(root / ".cursor/mcp.json", "mcpServers", conf), "write")]
     if tool == "kiro":
-        conf = {**sf, **others}
+        conf = {**own, **others}
         return [(".kiro/settings/mcp.json", _merge_json(root / ".kiro/settings/mcp.json", "mcpServers", conf), "write")]
     if tool == "gemini":
-        conf = {**sf, **others}
+        conf = {**own, **others}
         return [(".gemini/settings.json", _merge_json(root / ".gemini/settings.json", "mcpServers", conf), "write")]
     if tool == "windsurf":  # only the specanvil server: env interpolation for this file isn't documented
-        return [(".devin/mcp_config.json", _merge_json(root / ".devin/mcp_config.json", "mcpServers", sf), "write")]
+        return [(".devin/mcp_config.json", _merge_json(root / ".devin/mcp_config.json", "mcpServers", own), "write")]
     if tool == "codex":
         p = root / ".codex/config.toml"
         text = p.read_text(encoding="utf-8") if p.exists() else ""
@@ -296,7 +296,7 @@ def mcp_files(root: Path, tool: str, servers: dict) -> list[tuple[str, str, str]
                 "[mcp_servers.specanvil]\ncommand = \"specanvil-mcp\"\nargs = []\n"
         return [(".codex/config.toml", text, "write")]
     if tool == "augment":  # no project-level MCP file: an import file for Settings > MCP > Import from JSON
-        conf = {k: {kk: vv for kk, vv in v.items() if kk != "env"} for k, v in {**sf, **others}.items()}
+        conf = {k: {kk: vv for kk, vv in v.items() if kk != "env"} for k, v in {**own, **others}.items()}
         return [(".specanvil/mcp/augment-import.json", json.dumps({"mcpServers": conf}, indent=2) + "\n", "write")]
     return []
 
@@ -339,7 +339,7 @@ def _cmd_files(tool: str, b: Bundle) -> list[tuple[str, str, str]]:
             body = "If you can't hand steps to separate agents, run them yourself in order and stop at each gate.\n\n" + body
         rel = CMD_FILE[tool].format(c=c.name)
         if tool == "copilot":
-            head = [f"name: sf-{c.name}", f"description: {_yaml(c.description)}"]
+            head = [f"name: sa-{c.name}", f"description: {_yaml(c.description)}"]
             if c.argument_hint:
                 head.append(f"argument-hint: {_yaml(c.argument_hint)}")
             head.append("agent: agent")
@@ -355,7 +355,7 @@ def _cmd_files(tool: str, b: Bundle) -> list[tuple[str, str, str]]:
             out.append((rel, f"description = {json.dumps(c.description)}\nprompt = {_toml_str(body)}\n", "write"))
         elif tool in ("codex", "windsurf"):
             desc = f"SpecAnvil workflow: {c.description}. Use when asked to {c.name.replace('-', ' ')}."
-            out.append((rel, f"---\nname: sf-{c.name}\ndescription: {_yaml(desc[:1000])}\n---\n\n" + body, "write"))
+            out.append((rel, f"---\nname: sa-{c.name}\ndescription: {_yaml(desc[:1000])}\n---\n\n" + body, "write"))
         elif tool == "kiro":
             out.append((rel, f"---\ninclusion: manual\n---\n\n<!-- {c.description} -->\n\n" + body, "write"))
         elif tool == "replit":
@@ -371,17 +371,17 @@ def _agent_files(tool: str, b: Bundle) -> list[tuple[str, str, str]]:
         a = Agent(a.name, translate(a.description, tool), a.body, a.role)
         model = provider_model(tool, a.role, b.profile) if a.role else None
         if tool == "copilot":
-            head = [f"name: sf-{a.name}", f"description: {_yaml(a.description)}", "tools: ['specanvil/*', 'edit', 'search', "
+            head = [f"name: sa-{a.name}", f"description: {_yaml(a.description)}", "tools: ['specanvil/*', 'edit', 'search', "
                     "'runCommands', 'fetch', 'todos']"]
             if model:
                 head.append(f"model: {_yaml(model)}")
-            out.append((f".github/agents/sf-{a.name}.agent.md", "---\n" + "\n".join(head) + "\n---\n\n" + body, "write"))
+            out.append((f".github/agents/sa-{a.name}.agent.md", "---\n" + "\n".join(head) + "\n---\n\n" + body, "write"))
         elif tool == "codex":
-            lines = [f"name = {json.dumps('sf-' + a.name)}", f"description = {json.dumps(a.description)}"]
+            lines = [f"name = {json.dumps('sa-' + a.name)}", f"description = {json.dumps(a.description)}"]
             if model:
                 lines.append(f"model = {json.dumps(model)}")
             lines.append(f"developer_instructions = {_toml_str(body)}")
-            out.append((f".codex/agents/sf-{a.name}.toml", "\n".join(lines) + "\n", "write"))
+            out.append((f".codex/agents/sa-{a.name}.toml", "\n".join(lines) + "\n", "write"))
     return out
 
 
@@ -435,7 +435,7 @@ def render(root: Path, tools: list[str], b: Bundle, project_md: str = "", conven
     if "copilot" in others:
         p = root / ".github/copilot-instructions.md"
         pointer = f"{MARK_START}\nThis repo uses SpecAnvil. Follow the rules and workflows in `AGENTS.md` (always loaded by " \
-                  f"Copilot agent mode); workflows are prompt files in `.github/prompts/` (`/sf-groom`, `/sf-flow` ...).\n{MARK_END}\n"
+                  f"Copilot agent mode); workflows are prompt files in `.github/prompts/` (`/sa-groom`, `/sa-flow` ...).\n{MARK_END}\n"
         files.append((".github/copilot-instructions.md", merge_block(p.read_text(encoding="utf-8") if p.exists() else None,
                                                                     pointer, "Copilot instructions"), "write"))
     if "gemini" in others:
@@ -474,6 +474,6 @@ def setup_notes(tools: list[str]) -> list[str]:
                 "in .kiro/specs/<feature>/.",
         "gemini": "Gemini CLI: run /mcp to check the specanvil server; /commands reload after updates.",
         "replit": "Replit: Agent can't run local MCP servers. replit.md tells it to use `specanvil tool ...` in the shell "
-                  "(install with: pip install git+https://github.com/Abdulwahab26/Specforge).",
+                  "(install with: pip install git+https://github.com/Abdulwahab26/SpecAnvil).",
     }
     return [notes[t] for t in tools if t in notes]

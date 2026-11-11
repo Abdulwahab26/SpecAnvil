@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 STATE_DIR = ".specanvil"
@@ -171,8 +172,38 @@ def migrate_legacy_files(root: Path) -> list[str]:
     if man.is_file():
         text = man.read_text(encoding="utf-8")
         new = text.replace('"specforge"', '"specanvil"').replace("hooks/specforge.json", "hooks/specanvil.json")
+        new = _OLD_PREFIX_RX.sub(lambda m: m.group(0).replace("sf", "sa"), new)
         if new != text:
             man.write_text(new, encoding="utf-8")
             changed.append(str(man.relative_to(root)))
+    changed += remove_old_prefix_files(root)
     return changed
+
+
+# Workflows were `/sf:<name>` (from "SpecForge") until 0.10; they are `/sa:<name>` now. These are the files the old
+# prefix wrote, per tool ({n} = a workflow or role name). Only these exact, SpecAnvil-owned paths are ever removed.
+OLD_PREFIX_FILES = [".claude/commands/sf/{n}.md", ".augment/commands/sf/{n}.md", ".gemini/commands/sf/{n}.toml",
+                    ".github/prompts/sf-{n}.prompt.md", ".cursor/commands/sf-{n}.md", ".kiro/steering/sf-{n}.md",
+                    ".agents/skills/sf-{n}/SKILL.md", ".github/agents/sf-{n}.agent.md", ".codex/agents/sf-{n}.toml"]
+_OLD_PREFIX_RX = re.compile(r"(?<=/)sf(?=[/-][\w-]+(?:/SKILL)?\.(?:md|toml|prompt\.md|agent\.md)\")")
+
+
+def remove_old_prefix_files(root: Path) -> list[str]:
+    """Delete the workflow and role files written under the old `sf` prefix, so a repo upgraded with `init` does not
+    end up with every workflow twice. Returns the files removed. Safe to run repeatedly."""
+    assets = Path(__file__).parent / "assets"
+    names = sorted({f.stem for d in ("commands", "agents") for f in (assets / d).glob("*.md")})
+    removed = []
+    for pattern in OLD_PREFIX_FILES:
+        for n in names:
+            p = root / pattern.format(n=n)
+            if not p.is_file():
+                continue
+            p.unlink()
+            removed.append(p.relative_to(root).as_posix())
+            d = p.parent
+            while d != root and d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+                d = d.parent
+    return removed
 

@@ -126,7 +126,7 @@ def test_diagrams_audit_coverage_session(tmp_path):
     assert prev and "app/crud.py::create_user" in prev["symbols_in_context"] and not s.delivered
 
 
-def test_pack_extraction_is_safe_and_sfpack_roundtrip(tmp_path, monkeypatch):
+def test_pack_extraction_is_safe_and_sapack_roundtrip(tmp_path, monkeypatch):
     import io
     import tarfile
 
@@ -146,7 +146,7 @@ def test_pack_extraction_is_safe_and_sfpack_roundtrip(tmp_path, monkeypatch):
     (tmp_path / "lib").mkdir()
     lib = _graph_repo(tmp_path / "lib")
     alias = sources.add(f"path:{lib}", tmp_path)["source"]
-    out = tmp_path / "lib.sfpack"
+    out = tmp_path / "lib.sapack"
     assert packs.export(alias, out)["files"] > 3
     sources.remove(alias)
     res = packs.import_pack(out)

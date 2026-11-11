@@ -23,6 +23,6 @@ A table per AC:
 
 - IDs `TC-<feature>-<n>`; Type = Functional / Negative / Boundary / UI / A11y / Security / Performance; Priority P1-P3.
 - Steps are numbered and atomic; expected results are observable (text, state, status code), never "works correctly".
-- Mark cases that should be automated as `auto: e2e` or `auto: api` so `/sf:e2e` picks them up.
+- Mark cases that should be automated as `auto: e2e` or `auto: api` so `/sa:e2e` picks them up.
 
 Finish with a **traceability matrix** (AC → TC ids) and a **coverage gap** list. Also write `test-cases.csv` with the same columns, importable into TestRail, Xray, Zephyr or Azure Test Plans. If a ticket MCP is connected, ask before attaching the cases to the ticket.

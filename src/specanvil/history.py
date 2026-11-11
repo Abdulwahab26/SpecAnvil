@@ -164,6 +164,7 @@ def digest(ix: CodeIndex, since: str = "1 day ago") -> dict:
 def delivery_metrics(ix: CodeIndex, days: int = 30) -> dict:
     """Delivery signals from git: throughput, change size, rework (fix/revert share), merges, busiest files."""
     out = _git(ix, "log", f"--since={days} days ago", "--numstat", "--format=%x1e%h%x1f%an%x1f%at%x1f%s%x1f%P", timeout=120)
+    files: Counter
     commits, sizes, files, times, merges = [], [], Counter(), [], 0
     for block in out.split("\x1e"):
         if "\x1f" not in block:

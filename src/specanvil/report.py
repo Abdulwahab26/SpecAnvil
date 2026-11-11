@@ -69,7 +69,7 @@ def write_report(root: Path, ix: CodeIndex | None = None) -> Path:
     changed = sum(i["issue"] == "changed" for i in issues)
     missing = sum(i["issue"] == "missing" for i in issues)
     savings_tile = f"{sv['saved_pct']}%" if sv["calls"] else "—"
-    flow = "".join(f"<span>/sf:{c}</span><em>→</em>" for c in
+    flow = "".join(f"<span>/sa:{c}</span><em>→</em>" for c in
                    ["groom", "design", "plan", "be + fe", "db", "qa", "e2e", "verify", "ship"])[:-10]
 
     page = f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
@@ -101,3 +101,41 @@ def write_report(root: Path, ix: CodeIndex | None = None) -> Path:
     out = state_dir(root) / "report.html"
     out.write_text(page, encoding="utf-8")
     return out
+
+
+PR_COMMENT_MARK = "<!-- specanvil:pr-comment -->"
+
+
+def pr_comment(root: Path, ix, base: str = "HEAD") -> str:
+    """Markdown for a pull-request comment: change risk for the symbols touched since `base`, and spec drift.
+    Starts with a hidden marker so the CI job can update its own comment instead of adding a new one."""
+    from .graph import pr_risk
+    risk = pr_risk(ix, base)
+    d = drift(root, ix)
+    broken = [i for i in d["issues"] if i["issue"] in ("missing", "changed")]
+    out = [PR_COMMENT_MARK, "## SpecAnvil", ""]
+    if not risk.get("symbols"):
+        out += [f"**Change risk:** none ({risk.get('note', 'no indexed symbols changed')})", ""]
+    else:
+        out += [f"**Change risk: {risk['level']}** ({risk['risk']:.2f} on a 0 to 1 scale, "
+                f"{risk['symbols_changed']} symbols changed against `{base}`)", "",
+                "| Symbol | Risk | Callers | Branches | Tested | Review tip |", "|---|---|---|---|---|---|"]
+        for i in risk["symbols"][:10]:
+            tip = "; ".join(i["tips"]).replace("|", "/") or "-"
+            out.append(f"| `{i['ref']}` | {i['risk']:.2f} | {i['callers']} | {i['branches']} | "
+                       f"{'yes' if i['tested'] else 'no'} | {tip} |")
+        if risk["symbols_changed"] > 10:
+            out.append(f"\n{risk['symbols_changed'] - 10} more changed symbols not shown.")
+        out.append("")
+    if broken:
+        out += [f"**Spec drift: {len(broken)} code reference{'s' if len(broken) != 1 else ''} in specs no longer "
+                "match the code**", ""]
+        out += [f"- `{i['spec']}`: `{i['ref']}` is {i['issue']} ({i['detail']})" for i in broken[:20]]
+        if len(broken) > 20:
+            out.append(f"- and {len(broken) - 20} more: run `specanvil drift`")
+        out += ["", "Update the spec, then run `specanvil drift --lock`."]
+    else:
+        out.append("**Spec drift:** none. Every code reference in the specs still matches.")
+    out += ["", "<sub>Computed locally in CI from the code index. No AI calls. "
+            f"Risk weights: {risk.get('weights', 'n/a')}.</sub>"]
+    return "\n".join(out) + "\n"

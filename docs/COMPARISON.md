@@ -119,7 +119,7 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 | `check_embedding_drift` | built in: vectors are stored per model and never mixed; `index_status` reports coverage per model |
 | `set_tool_tier`, `announce_model` | `set_tool_tier(tier, enable=[…], model=…)`: switches at runtime and sends `notifications/tools/list_changed`; a model id picks a tier |
 | `menu`, `order`, `route` | `set_tool_tier()` with no arguments lists every tool by tier; `run_tool(name, arguments)` calls any tool, even on clients that ignore list-changed notifications |
-| `jcodemunch_guide`, `workflow`, `explore`, `triage`, `assess`, `trace` | slash commands and CLAUDE.md block (`/sf:analyze`, `/sf:verify`…) over `repo_map`, `repo_health`, `pr_risk`, `call_hierarchy` + `signal_chains` |
+| `jcodemunch_guide`, `workflow`, `explore`, `triage`, `assess`, `trace` | slash commands and CLAUDE.md block (`/sa:analyze`, `/sa:verify`…) over `repo_map`, `repo_health`, `pr_risk`, `call_hierarchy` + `signal_chains` |
 | `finalize_handoff` | `finalize_handoff(title, sections, kind)`: audit / investigation / review / design; required sections, no placeholders, every `path::Symbol` and `path:line` checked against the index; stamped with commit and index time; refuses to write on errors unless `force` |
 
 **Indexing and sources**
@@ -153,7 +153,7 @@ Measured as tiktoken `cl100k_base` over each tool's name, description and input 
 |---|---|---|
 | Semantic / hybrid search | Optional embeddings | Body-vocabulary hybrid (no download) + optional local embeddings (fastembed ONNX, or Ollama / OpenAI-compatible **localhost** endpoint). Model downloaded only by the explicit `specanvil embed`; query-time loads are offline (verified: 0 network connections) |
 | AI summaries | Provider APIs (Anthropic, Gemini, OpenAI-compatible…) or local | Written by **your own Claude session** via MCP on a cheap model from your profile. No extra API keys. Cached by code hash, marked `≈` |
-| Starter packs | Curated packs for popular frameworks | **51 curated packs** fetched from npm / PyPI / Go proxy / GitHub at any version, **no install needed**; plus packs from your installed versions; `.sfpack` export / import for offline sharing; safe extraction (no absolute paths, no `..`, size caps — tested) |
+| Starter packs | Curated packs for popular frameworks | **51 curated packs** fetched from npm / PyPI / Go proxy / GitHub at any version, **no install needed**; plus packs from your installed versions; `.sapack` export / import for offline sharing; safe extraction (no absolute paths, no `..`, size caps — tested) |
 | GitHub repo indexing | ✔ | ✔ `specanvil source add gh:owner/repo[@ref]` |
 | Watch mode | ✔ | ✔ `specanvil watch [--embed]` + PostToolUse re-index + MCP auto-refresh |
 
@@ -175,9 +175,9 @@ Every engineering gap from earlier comparisons (tool coverage, symbol counts, cu
 ## What SpecAnvil adds beyond a code index
 
 - **−61% tokens** on jCodeMunch's own benchmark, **2–6× faster** cold indexing including graph building, more symbols on two of the three benchmark repos, a **24% smaller default** tool surface and a **72% smaller full** surface.
-- Features jCodeMunch doesn't have: route → handler / event / DI flow edges, entry points, HTTP-route mapping of traces, trace latency in risk scores, validated handoffs checked against the index, regret rules applied automatically to `get_context`, Go implicit-interface implementations, config keys and doc sections as fetchable symbols, `.sfpack` offline pack sharing.
+- Features jCodeMunch doesn't have: route → handler / event / DI flow edges, entry points, HTTP-route mapping of traces, trace latency in risk scores, validated handoffs checked against the index, regret rules applied automatically to `get_context`, Go implicit-interface implementations, config keys and doc sections as fetchable symbols, `.sapack` offline pack sharing.
 - **Programmatic enforcement:** server-side session dedupe, secret guard hook, schema-validated test plans, test-verified milestones, documentation completeness gate, local-only guarantees with tests.
 - **MIT licence** (jCodeMunch: free for non-commercial use; commercial licences $79–$1,999 per its PyPI page).
-- The complete spec-driven package: specs with drift checks, 13 agents, 21 commands from grooming to Playwright E2E, a unit-test planner/executor, ticket backfill, documentation for every repo type, per-role models.
+- The complete spec-driven package: specs with drift checks, 13 agents, 21 commands (22 in an OpenSpec repo) from grooming to Playwright E2E, a unit-test planner/executor, ticket backfill, documentation for every repo type, per-role models.
 
 *Measured 2026-11-10 in a 2-vCPU container. jCodeMunch's token and timing numbers are from its harness at v1.108.431 on the same commits; its tool list is from that version's `server.py`. Features and prices change: check current versions before quoting.*

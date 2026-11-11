@@ -205,7 +205,7 @@ def plan_dir(root: Path, module: str, specs_dir: str = "specs") -> Path:
 def load_plan(root: Path, module: str, specs_dir: str = "specs") -> tuple[dict, Path]:
     p = plan_dir(root, module, specs_dir) / "milestones.json"
     if not p.exists():
-        raise FileNotFoundError(f"No plan at {p.relative_to(root)}. Run /sf:test-plan {module} first.")
+        raise FileNotFoundError(f"No plan at {p.relative_to(root)}. Run /sa:test-plan {module} first.")
     return json.loads(p.read_text(encoding="utf-8")), p
 
 

@@ -180,6 +180,7 @@ def extract_sections(path: str, lang: str, source: str) -> list[tuple[str, str, 
             heads.append((rst_levels.index(ch) + 1, lines[i - 1].strip(), i))
         if len(heads) >= MAX_SECTIONS:
             break
+    stack: list
     out, stack = [], []
     for k, (level, title, line) in enumerate(heads):
         title = re.sub(r"\s*\{#[^}]*\}\s*$", "", re.sub(r"[*_`]|\[([^\]]*)\]\([^)]*\)", r"\1", title)).strip()[:160]

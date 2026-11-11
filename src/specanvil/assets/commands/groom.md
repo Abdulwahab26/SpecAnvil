@@ -35,4 +35,4 @@ Use the template at `{{templates_dir}}/requirements.md`. Rules:
 ## 5. Report
 Print: summary, AC count, estimate, open questions, and the file path. If a ticket MCP is connected, **ask** before posting the ACs and questions back to the ticket.
 
-Next step: `/sf:design <ID>`.
+Next step: `/sa:design <ID>`.

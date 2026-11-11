@@ -334,7 +334,7 @@ def list_specs_tool() -> str:
     """All spec files with title, status, size and number of code references."""
     specs = list_specs(ROOT)
     if not specs:
-        return "No specs yet. Run `specanvil init` or /sf:groom to create some."
+        return "No specs yet. Run `specanvil init` or /sa:groom to create some."
     return "\n".join(f"{s['path']} — {s['title']} [{s['status'] or 'n/a'}] ~{s['tokens']} tok, {s['refs']} refs"
                      for s in specs)
 
@@ -470,6 +470,7 @@ async def set_tool_tier(tier: str = "", enable: list[str] | None = None, model: 
     name, or pass your model id to pick a tier. No arguments: list every tool by tier."""
     global TIER
     if not tier and not enable and not model:
+        seen: set
         groups, seen = {}, set()
         for t in ("lite", "core", "standard", "analysis"):
             groups[t] = sorted(TIERS[t] - seen)

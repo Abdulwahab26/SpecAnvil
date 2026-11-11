@@ -32,7 +32,7 @@ flowchart TB
 
 | Domain (weight) | Where it shows up |
 |---|---|
-| **Agentic architecture & orchestration** (27%) | `/sf:flow` orchestrator + 13 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
+| **Agentic architecture & orchestration** (27%) | `/sa:flow` orchestrator + 13 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
 | **Claude Code configuration & workflows** (20%) | Generated `CLAUDE.md` block, slash commands with `argument-hint`, subagents with `model` and `tools` frontmatter, project skills generated from the repo's own code, `.mcp.json` merge that never clobbers user servers, `settings.json` hooks and permissions. Upgrades re-render assets without touching user-edited specs. |
 | **Prompt engineering & structured output** (20%) | Commands state role, inputs, procedure, output contract and next step. Machine-readable artifacts where a program consumes them (`milestones.json`, schema-checked by `validate_plan`); Gherkin ACs and `path::Qualname` refs in specs so drift can be checked by code. |
 | **Tool design & MCP integration** (18%) | Narrow, composable tools with ids that chain (`search_symbols` → `get_symbol(id)`), budget parameters, section-level reads, errors raised as MCP `isError` with an actionable next step, and tools that return the minimum context a small model needs (`next_test_milestone`). Connector catalog picks third-party MCP servers from detected signals with `${ENV}` secrets and read-only defaults. |
@@ -91,12 +91,12 @@ Prompts still carry intent and judgement (how to design a test, how to word an A
 **Trade-off.** Agent files in `.claude/agents/` reflect whoever last synced. If the team commits `.claude/`, each developer runs `specanvil profile sync` after pulling (idempotent, only rewrites changed files).
 
 ### ADR-6: Ticket backfill is opt-in, read-only and resumable
-**Decision.** `/sf:backfill` refuses to start until `backfill.enabled` is true in the profile, never writes to the ticket system, records progress after each batch (`backfill_progress`), skips tickets that already have specs, and links each ticket to code through local git archaeology (`ticket_trace`: commits mentioning the key → changed files → current symbols via hunk headers and changed identifiers).
+**Decision.** `/sa:backfill` refuses to start until `backfill.enabled` is true in the profile, never writes to the ticket system, records progress after each batch (`backfill_progress`), skips tickets that already have specs, and links each ticket to code through local git archaeology (`ticket_trace`: commits mentioning the key → changed files → current symbols via hunk headers and changed identifiers).
 **Why.** Hundreds of tickets will exceed one context window and may be interrupted; checkpointing makes the job restartable and parallelisable (batches to up to 3 subagents). Linking through git gives specs real `path::Qualname` refs, so drift checks work on historical features too.
 **Trade-off.** Inferred refs can include neighbours of the real change; specs mark them for human review.
 
 ### ADR-7: MCP tool contract
-**Decision.** Tools are narrow and composable, return compact text or minified JSON, accept budgets, chain through ids, and raise MCP errors (`isError: true`) whose message names the next action ("Try search_symbols(...)", "Run /sf:test-plan ... first"). Every call is logged with a whole-file baseline for the savings report.
+**Decision.** Tools are narrow and composable, return compact text or minified JSON, accept budgets, chain through ids, and raise MCP errors (`isError: true`) whose message names the next action ("Try search_symbols(...)", "Run /sa:test-plan ... first"). Every call is logged with a whole-file baseline for the savings report.
 **Why.** Small, predictable outputs keep agent context lean; actionable errors let the model self-correct without a human.
 
 ### ADR-8: Secrets defence in depth
@@ -136,7 +136,7 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Why.** One place for telemetry and error contract (`isError` with a next step), and every analysis is unit-testable without an MCP client. A stdio test (`tests/mcp_v05_tools.py`) calls every tool against a real repo and fails on any error.
 
 ### ADR-16: Curated starter packs fetched from registries, extracted defensively
-**Decision.** A 51-entry catalog maps names to `npm:` / `pypi:` / `go:` / `gh:` specs. `specanvil pack add` downloads the published archive (size-capped), rejects absolute paths, drive letters and `..` entries **before** prefix stripping, writes only under `~/.specanvil/sources/packs`, and registers the result as a source. `.sfpack` files (zip of meta + sources) share packs offline; the recipient indexes locally.
+**Decision.** A 51-entry catalog maps names to `npm:` / `pypi:` / `go:` / `gh:` specs. `specanvil pack add` downloads the published archive (size-capped), rejects absolute paths, drive letters and `..` entries **before** prefix stripping, writes only under `~/.specanvil/sources/packs`, and registers the result as a source. `.sapack` files (zip of meta + sources) share packs offline; the recipient indexes locally.
 **Why.** Complements ADR-13: reading a library you have not installed yet (evaluation, upgrades) without running its install scripts. Downloading is an explicit command, never part of indexing. A test feeds a malicious tarball and asserts nothing escapes the target folder.
 
 ### ADR-17: Retrieval quality is a CI gate
@@ -156,7 +156,7 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Why.** Schemas are paid on every turn. Some clients have open issues about not refreshing on list-changed mid-session, so switching alone would strand tools; the dispatcher guarantees reachability. Result: ~790 tokens default (jCodeMunch ~1,050), ~7,870 for all 92 tools (jCodeMunch ~28,142).
 
 ### ADR-21: One neutral bundle, translated into each AI tool's native formats
-**Decision.** Commands, role agents, skills, rules and MCP servers are built once from the existing assets (written in the Claude Code dialect), then translated per tool: command syntax (`/sf:x`, `/sf-x`, `#sf-x`, skills, playbooks), file paths, argument placeholders (`$ARGUMENTS`, `${input:…}`, `{{args}}`), sub-agent wording, and MCP file/key/env syntax. Tools are detected from their config folders; `AGENTS.md` carries the shared rules for the tools that read it, with a one-line "how to run a workflow in your tool" table. Tools without commands get Agent Skills or manual steering; tools without local MCP get a CLI bridge to the same tools.
+**Decision.** Commands, role agents, skills, rules and MCP servers are built once from the existing assets (written in the Claude Code dialect), then translated per tool: command syntax (`/sa:x`, `/sa-x`, `#sa-x`, skills, playbooks), file paths, argument placeholders (`$ARGUMENTS`, `${input:…}`, `{{args}}`), sub-agent wording, and MCP file/key/env syntax. Tools are detected from their config folders; `AGENTS.md` carries the shared rules for the tools that read it, with a one-line "how to run a workflow in your tool" table. Tools without commands get Agent Skills or manual steering; tools without local MCP get a CLI bridge to the same tools.
 **Why.** Teams mix tools, and one generator keeps every tool's setup consistent with a single source. A test generates all nine setups and checks every JSON, TOML and YAML front matter parses and that no Claude-only syntax leaks into other tools' files. Enforcement that lives in the MCP server (secret filtering, redaction, dedupe, tiers) holds in every tool; hook-based guards remain Claude Code only, and the docs say so.
 
 ### ADR-22: OpenSpec mode adapts to the existing spec system

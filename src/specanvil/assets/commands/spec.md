@@ -11,4 +11,4 @@ For small changes (≤ 1 day). Create `{{features_dir}}/<slug>/requirements.md` 
 - a 5-10 line task list at the bottom instead of separate design/plan files,
 - `status: planned`.
 
-Then implement it test-first, run `{{test_cmd}}`, and finish with `/sf:verify <slug>`.
+Then implement it test-first, run `{{test_cmd}}`, and finish with `/sa:verify <slug>`.

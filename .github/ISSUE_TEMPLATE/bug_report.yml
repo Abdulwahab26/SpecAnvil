@@ -1,0 +1,35 @@
+name: Bug report
+description: Something SpecAnvil did wrong or failed to do
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command or tool you ran, what you expected and what you got. Paste the error text.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Smallest steps or a public repo where it happens.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SpecAnvil version
+      description: Output of `specanvil --version`
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OS, Python version and AI coding tool
+      placeholder: Windows 11, Python 3.12, Cursor
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `specanvil doctor`
+      render: text

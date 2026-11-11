@@ -40,10 +40,10 @@ def test_openspec_mode_init_does_not_create_a_second_spec_system(tmp_path, monke
     assert cfg["spec_system"] == "openspec" and cfg["features_dir"] == "openspec/changes" and cfg["specs_dir"] == "openspec/specanvil"
     assert not (root / "specs").exists()
     assert all(p.read_bytes() == b for p, b in before.items())      # OpenSpec's own files are untouched
-    groom = (root / ".claude/commands/sf/groom.md").read_text(encoding="utf-8")
+    groom = (root / ".claude/commands/sa/groom.md").read_text(encoding="utf-8")
     assert "This repo uses OpenSpec" in groom and groom.startswith("---")
-    assert (root / ".claude/commands/sf/baseline.md").exists() and (root / ".cursor/commands/sf-baseline.md").exists()
-    assert "This repo uses OpenSpec" in (root / ".cursor/commands/sf-groom.md").read_text(encoding="utf-8")
+    assert (root / ".claude/commands/sa/baseline.md").exists() and (root / ".cursor/commands/sa-baseline.md").exists()
+    assert "This repo uses OpenSpec" in (root / ".cursor/commands/sa-groom.md").read_text(encoding="utf-8")
     assert "### OpenSpec" in (root / "CLAUDE.md").read_text(encoding="utf-8")
     assert not (root / "openspec/specanvil/templates/requirements.md").exists()
     from specanvil.specs import drift, list_specs
@@ -67,14 +67,14 @@ def test_uninstall_round_trip_keeps_user_content(tmp_path, monkeypatch):
     hooks = json.loads((root / ".cursor/hooks.json").read_text(encoding="utf-8"))["hooks"]
     assert {"command": "specanvil hook guard"} in hooks["beforeReadFile"] and {"command": "fmt.sh"} in hooks["afterFileEdit"]
     dry = uninstall(root, ["cursor"], dry_run=True)
-    assert dry["dry_run"] and (root / ".cursor/commands/sf-groom.md").exists()
+    assert dry["dry_run"] and (root / ".cursor/commands/sa-groom.md").exists()
     res = uninstall(root, ["cursor", "copilot"])
     assert res["remaining_tools"] == ["claude", "codex"]
     assert not (root / ".cursor/commands").exists() and not (root / ".github/prompts").exists()
     assert json.loads((root / ".cursor/mcp.json").read_text(encoding="utf-8")) == {"mcpServers": {"mine": {"command": "x"}}}
     assert json.loads((root / ".cursor/hooks.json").read_text(encoding="utf-8"))["hooks"] == {"afterFileEdit": [{"command": "fmt.sh"}]}
     assert "specanvil:start" in (root / "AGENTS.md").read_text(encoding="utf-8")   # Codex still needs it
-    assert (root / ".claude/commands/sf/groom.md").exists()
+    assert (root / ".claude/commands/sa/groom.md").exists()
     uninstall(root)
     assert (root / "AGENTS.md").read_text(encoding="utf-8") == "# Team\n\nOur notes.\n"
     assert not (root / ".claude").exists() and not (root / "CLAUDE.md").exists() and not (root / ".codex").exists()

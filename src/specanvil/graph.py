@@ -353,6 +353,7 @@ def class_hierarchy(ix, name: str) -> dict:
                                "defined_at": f"{loc['path']}:{loc['start_line']}" if loc else "external"})
                     nxt.append(r["base"])
         frontier = nxt
+    down: list
     down, frontier, seen = [], [name], {name}
     while frontier and len(down) < 200:
         nxt = []
@@ -595,6 +596,7 @@ def layer_violations(ix, layers: list[dict] | None = None, limit: int = 50) -> d
     from .config import load_config
     layers = layers or load_config(ix.root).get("layers") or DEFAULT_LAYERS
     order = {L["name"]: i for i, L in enumerate(layers)}
+    assigned: Counter
     out, assigned = [], Counter()
     for s, d in ix.db.execute("SELECT src, dst FROM file_deps"):
         ls, ld = layer_of(s, layers), layer_of(d, layers)

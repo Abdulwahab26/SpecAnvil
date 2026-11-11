@@ -20,4 +20,4 @@ Implementation order:
 5. **Endpoint/handler** with authz checks and integration tests.
 6. **Observability**: structured logs without PII; metrics if the design asks.
 
-After each task: run `{{test_cmd}}`, fix failures, tick the task, and update the **Code map** with `` `path::Qualname` `` for new symbols. For any query that runs per request, run `/sf:db` on it before calling the feature done.
+After each task: run `{{test_cmd}}`, fix failures, tick the task, and update the **Code map** with `` `path::Qualname` `` for new symbols. For any query that runs per request, run `/sa:db` on it before calling the feature done.

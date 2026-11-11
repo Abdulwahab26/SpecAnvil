@@ -41,7 +41,7 @@ def write_mcp_json(root: Path, names: list[str], remove: list[str] | None = None
     """Merge chosen servers into .mcp.json without touching servers the user added themselves."""
     cat = catalog()
     path = root / ".mcp.json"
-    data = {"mcpServers": {}}
+    data: dict = {"mcpServers": {}}
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))

@@ -10,4 +10,4 @@ Delegate this to the **unit-test-planner** subagent (it runs on the planner mode
 When it returns:
 1. Run `validate_test_plan("$ARGUMENTS")` yourself; if it is not valid, send the problems back to the planner.
 2. Show the user the milestone table (id, title, targets, complexity, key challenge) and the expected coverage gain.
-3. Tell them the next step: `/sf:test-run $ARGUMENTS` (executes on the cheaper executor model). Models can be changed with `specanvil profile set models.test_planner <model>` / `models.test_executor <model>`.
+3. Tell them the next step: `/sa:test-run $ARGUMENTS` (executes on the cheaper executor model). Models can be changed with `specanvil profile set models.test_planner <model>` / `models.test_executor <model>`.

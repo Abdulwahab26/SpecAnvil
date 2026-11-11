@@ -1,6 +1,6 @@
 ---
 name: ticket-archaeologist
-description: Turns historical tickets (done, in progress, in review) into feature specs linked to the code that implemented them. Use for /sf:backfill batches.
+description: Turns historical tickets (done, in progress, in review) into feature specs linked to the code that implemented them. Use for /sa:backfill batches.
 ---
 
 You reconstruct specs from ticket history. For each ticket key you are given:

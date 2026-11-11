@@ -1,5 +1,5 @@
 {
- "_note": "Document catalog for /sf:docs. Each doc lists required section headings (checked by `specanvil docs check`), the local facts it is built from, and an optional coverage fact whose every item must appear in the document. Add your own entries in .specanvil/docs-catalog.json (same shape) to extend or override.",
+ "_note": "Document catalog for /sa:docs. Each doc lists required section headings (checked by `specanvil docs check`), the local facts it is built from, and an optional coverage fact whose every item must appear in the document. Add your own entries in .specanvil/docs-catalog.json (same shape) to extend or override.",
  "docs": [
   {
    "id": "docs-index",

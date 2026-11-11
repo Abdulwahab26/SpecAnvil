@@ -231,7 +231,7 @@ def azure_functions(fc: FactContext) -> list[dict]:
         except json.JSONDecodeError:
             continue
         b = data.get("bindings") or []
-        trig = next((x for x in b if str(x.get("type", "")).endswith("Trigger")), {})
+        trig: dict = next((x for x in b if str(x.get("type", "")).endswith("Trigger")), {})
         out.append({"name": path.rsplit("/", 2)[-2] if "/" in path else path, "trigger": trig.get("type"),
                     "detail": trig.get("schedule") or trig.get("route") or trig.get("queueName") or trig.get("path")
                     or trig.get("topicName") or "", "bindings": [f"{x.get('direction')}:{x.get('type')}" for x in b],
@@ -356,6 +356,7 @@ def components(fc: FactContext) -> list[dict]:
 def tests(fc: FactContext) -> dict:
     files = [f["path"] for f in fc.files if f["parser"] != "text" and TEST_RX.search(f["path"])]
     files += [f["path"] for f in fc.files if f["path"].endswith(".feature")]
+    tags_total: dict
     inv, tags_total = [], defaultdict(int)
     for p in files:
         text = fc.text(p)
@@ -368,7 +369,7 @@ def tests(fc: FactContext) -> dict:
         kind = ("e2e" if browser or re.search(r"(^|/)(e2e|cypress|playwright|ui-tests|acceptance|features)(/|$)|\.feature$", p)
                 else "integration" if re.search(r"integration|/it/|api-tests|\.it\.", p, re.I) else "unit")
         inv.append({"file": p, "cases": n, "type": kind, "tags": tags})
-    by_type = defaultdict(lambda: {"files": 0, "cases": 0})
+    by_type: dict = defaultdict(lambda: {"files": 0, "cases": 0})
     for t in inv:
         by_type[t["type"]]["files"] += 1
         by_type[t["type"]]["cases"] += t["cases"]

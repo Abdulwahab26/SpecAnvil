@@ -1,0 +1,112 @@
+{
+ "repo": "dotnet-architecture/eShopOnWeb",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "create an order from a basket",
+   "expected": [
+    "CreateOrderAsync"
+   ]
+  },
+  {
+   "task": "add an item to the basket",
+   "expected": [
+    "AddItemToBasket",
+    "AddItem"
+   ]
+  },
+  {
+   "task": "transfer an anonymous basket to the logged-in user",
+   "expected": [
+    "TransferBasketAsync",
+    "SetNewBuyerId"
+   ]
+  },
+  {
+   "task": "set the quantities of basket items",
+   "expected": [
+    "SetQuantities"
+   ]
+  },
+  {
+   "task": "delete a basket",
+   "expected": [
+    "DeleteBasketAsync"
+   ]
+  },
+  {
+   "task": "calculate the total of an order",
+   "expected": [
+    "Total"
+   ]
+  },
+  {
+   "task": "generate a token with the user's claims",
+   "expected": [
+    "GetTokenAsync",
+    "IdentityTokenClaimService"
+   ]
+  },
+  {
+   "task": "handle exceptions in the API middleware and write an error response",
+   "expected": [
+    "HandleExceptionAsync",
+    "ExceptionMiddleware"
+   ]
+  },
+  {
+   "task": "get catalog items filtered by brand and type, one page at a time",
+   "expected": [
+    "GetCatalogItems",
+    "CatalogFilterPaginatedSpecification"
+   ]
+  },
+  {
+   "task": "validate that an uploaded image has an allowed extension",
+   "expected": [
+    "IsValidImage",
+    "IsExtensionValid"
+   ]
+  },
+  {
+   "task": "compose the picture URI of a catalog item",
+   "expected": [
+    "ComposePicUri"
+   ]
+  },
+  {
+   "task": "show the current user's orders",
+   "expected": [
+    "MyOrders",
+    "GetMyOrdersHandler",
+    "CustomerOrdersSpecification"
+   ]
+  },
+  {
+   "task": "seed the catalog database",
+   "expected": [
+    "SeedAsync",
+    "CatalogContextSeed"
+   ]
+  },
+  {
+   "task": "update the name, description and price of a catalog item",
+   "expected": [
+    "UpdateDetails"
+   ]
+  },
+  {
+   "task": "change the user's password",
+   "expected": [
+    "ChangePassword"
+   ]
+  },
+  {
+   "task": "post the checkout page and create the order",
+   "expected": [
+    "OnPost",
+    "CheckoutModel"
+   ]
+  }
+ ]
+}

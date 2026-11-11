@@ -118,6 +118,7 @@ def build(ix: CodeIndex, batch: int = 128, progress=None) -> dict:
     todo = [r for r in rows if have.get((r["path"], r["qualname"])) != (r["body_hash"], s["model"])]
     current = {(r["path"], r["qualname"]) for r in rows}
     stale = [k for k in have if k not in current]
+    files: dict
     t0, files = time.time(), {}
     for i in range(0, len(todo), batch):
         chunk = todo[i:i + batch]

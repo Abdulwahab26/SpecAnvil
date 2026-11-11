@@ -15,14 +15,14 @@ specanvil uninstall cursor          # remove one tool's files (or all with no ar
 
 | Tool | Always-on rules | Workflows (`groom`, `design`, … `flow`) | Role agents | Skills | MCP |
 |---|---|---|---|---|---|
-| Claude Code | `CLAUDE.md` | `.claude/commands/sf/*.md` → `/sf:groom` | `.claude/agents/*.md` (model per role) | `.claude/skills/` | `.mcp.json` |
-| GitHub Copilot (VS Code) | `AGENTS.md` + pointer in `.github/copilot-instructions.md` | `.github/prompts/sf-*.prompt.md` → `/sf-groom` | `.github/agents/sf-*.agent.md` (tools `specanvil/*`; optional model) | `.github/skills/` | `.vscode/mcp.json` (`servers`, `${workspaceFolder}`) |
-| Cursor | `AGENTS.md` | `.cursor/commands/sf-*.md` → `/sf-groom` | role text inside each workflow | `.cursor/rules/*.mdc` (agent-requested) | `.cursor/mcp.json` |
-| Augment Code | `AGENTS.md` | `.augment/commands/sf/*.md` → `/sf:groom` (`$ARGUMENTS`) | role text inside each workflow | `.augment/skills/` | `.specanvil/mcp/augment-import.json` → Settings › MCP › Import from JSON |
-| Windsurf / Devin Local | `AGENTS.md` | Agent Skills `.agents/skills/sf-*` | role text inside each workflow | `.agents/skills/` | `.devin/mcp_config.json` (specanvil server) |
-| OpenAI Codex | `AGENTS.md` | Agent Skills `.agents/skills/sf-*` | `.codex/agents/sf-*.toml` (optional model) | `.agents/skills/` | `.codex/config.toml` (trusted projects) |
-| Kiro | `AGENTS.md` + `.kiro/steering/{product,tech,structure}.md` | `.kiro/steering/sf-*.md` (manual) → `#sf-groom` | role text inside each workflow | steering files (`inclusion: auto`) | `.kiro/settings/mcp.json` |
-| Gemini CLI | `GEMINI.md` | `.gemini/commands/sf/*.toml` → `/sf:groom` (`{{args}}`) | role text inside each workflow | `.agents/skills/` | `.gemini/settings.json` |
+| Claude Code | `CLAUDE.md` | `.claude/commands/sa/*.md` → `/sa:groom` | `.claude/agents/*.md` (model per role) | `.claude/skills/` | `.mcp.json` |
+| GitHub Copilot (VS Code) | `AGENTS.md` + pointer in `.github/copilot-instructions.md` | `.github/prompts/sa-*.prompt.md` → `/sa-groom` | `.github/agents/sa-*.agent.md` (tools `specanvil/*`; optional model) | `.github/skills/` | `.vscode/mcp.json` (`servers`, `${workspaceFolder}`) |
+| Cursor | `AGENTS.md` | `.cursor/commands/sa-*.md` → `/sa-groom` | role text inside each workflow | `.cursor/rules/*.mdc` (agent-requested) | `.cursor/mcp.json` |
+| Augment Code | `AGENTS.md` | `.augment/commands/sa/*.md` → `/sa:groom` (`$ARGUMENTS`) | role text inside each workflow | `.augment/skills/` | `.specanvil/mcp/augment-import.json` → Settings › MCP › Import from JSON |
+| Windsurf / Devin Local | `AGENTS.md` | Agent Skills `.agents/skills/sa-*` | role text inside each workflow | `.agents/skills/` | `.devin/mcp_config.json` (specanvil server) |
+| OpenAI Codex | `AGENTS.md` | Agent Skills `.agents/skills/sa-*` | `.codex/agents/sa-*.toml` (optional model) | `.agents/skills/` | `.codex/config.toml` (trusted projects) |
+| Kiro | `AGENTS.md` + `.kiro/steering/{product,tech,structure}.md` | `.kiro/steering/sa-*.md` (manual) → `#sa-groom` | role text inside each workflow | steering files (`inclusion: auto`) | `.kiro/settings/mcp.json` |
+| Gemini CLI | `GEMINI.md` | `.gemini/commands/sa/*.toml` → `/sa:groom` (`{{args}}`) | role text inside each workflow | `.agents/skills/` | `.gemini/settings.json` |
 | Replit Agent | `replit.md` | `.specanvil/playbooks/*.md` | role text inside each workflow | `.specanvil/playbooks/skills/` | none locally: `specanvil tool <name> '<json>'` from the shell |
 
 **Specs per tool.** Specs live in `specs/` for every tool. When Kiro is in use, feature specs go in Kiro's own layout, `.kiro/specs/<feature>/` (requirements, design, tasks), so they show up in Kiro's spec view; templates move to `specs/templates/`. Drift checks, `list_specs` and `read_spec` cover both folders.

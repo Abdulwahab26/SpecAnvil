@@ -254,6 +254,21 @@ def cmd_drift(args) -> int:
     return 1 if any(i["issue"] in ("missing", "changed") for i in d["issues"]) and args.strict else 0
 
 
+def cmd_pr_comment(args) -> int:
+    from .index import CodeIndex
+    from .report import pr_comment
+    root = _root(args)
+    ix = CodeIndex(root)
+    ix.build()
+    text = pr_comment(root, ix, args.base)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(args.out)
+    else:
+        print(text, end="")
+    return 0
+
+
 def cmd_report(args) -> int:
     from .report import write_report
     print(write_report(_root(args)))
@@ -469,7 +484,7 @@ def cmd_docs(args) -> int:
         icon = {"fresh": "✔", "stale": "↻", "unverified": "?", "missing": "✘"}
         for r in rows:
             print(f"  {icon[r['status']]} {r['status']:<10} {r['id']:<22} {r['path']}")
-        counts = {}
+        counts: dict = {}
         for r in rows:
             counts[r["status"]] = counts.get(r["status"], 0) + 1
         print("  " + ", ".join(f"{n} {k}" for k, n in counts.items()))
@@ -593,12 +608,12 @@ def cmd_pack(args) -> int:
                 print(f"  {'✔' if p['installed'] else '·'} {p['pack']:<26} {p['source']:<40} {p['about']}")
             return 0
         if not args.spec:
-            print("usage: specanvil pack add|export|import <spec|source|file> [-o out.sfpack]", file=sys.stderr)
+            print("usage: specanvil pack add|export|import <spec|source|file> [-o out.sapack]", file=sys.stderr)
             return 1
         if args.action == "add":
             res = packs.add(args.spec)
         elif args.action == "export":
-            res = packs.export(args.spec, Path(args.out or (re.sub(r"[^\w.@-]+", "_", args.spec) + ".sfpack")))
+            res = packs.export(args.spec, Path(args.out or (re.sub(r"[^\w.@-]+", "_", args.spec) + ".sapack")))
         else:
             res = packs.import_pack(Path(args.spec))
     except (ValueError, OSError) as e:
@@ -769,6 +784,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--strict", action="store_true", help="exit 1 on changed/missing refs (for CI)")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(fn=cmd_drift)
+
+    p = sub.add_parser("pr-comment", help="Markdown for a pull-request comment: change risk + spec drift")
+    p.add_argument("--base", default="HEAD", help="git ref to compare against (in CI: origin/<base branch>)")
+    p.add_argument("-o", "--out", help="write to this file instead of stdout")
+    p.add_argument("path", nargs="?")
+    p.set_defaults(fn=cmd_pr_comment)
 
     p = sub.add_parser("report", help="write .specanvil/report.html")
     p.add_argument("path", nargs="?")

@@ -114,7 +114,7 @@ def list_workspaces(ix: CodeIndex) -> dict:
     from .detect import detect_stack
     root = ix.root
     st = detect_stack(root, ix)
-    declared = []
+    declared: list = []
     try:
         pj = json.loads((root / "package.json").read_text(encoding="utf-8"))
         ws = pj.get("workspaces")
@@ -204,7 +204,7 @@ def group_contracts(ix: CodeIndex, members: list[str] | None = None, limit: int 
             continue
     published = {k: _package_name(v.root) for k, v in repos.items()}
     contracts: dict[tuple, dict] = {}
-    unresolved = Counter()
+    unresolved: Counter = Counter()
     for a, ia in repos.items():
         for path, stmt in ia.db.execute("SELECT path, source FROM imports"):
             for mod, names in _imported_names(stmt):

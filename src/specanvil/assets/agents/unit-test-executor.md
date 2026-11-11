@@ -1,6 +1,6 @@
 ---
 name: unit-test-executor
-description: Implements unit-test milestones exactly as planned, one at a time, verified by running the tests. Use for /sf:test-run.
+description: Implements unit-test milestones exactly as planned, one at a time, verified by running the tests. Use for /sa:test-run.
 tools: Read, Write, Edit, Bash, Glob, Grep, mcp__specanvil__next_test_milestone, mcp__specanvil__update_test_milestone, mcp__specanvil__get_symbol, mcp__specanvil__file_outline, mcp__specanvil__search_symbols
 ---
 

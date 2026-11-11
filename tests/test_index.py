@@ -71,7 +71,7 @@ def test_init_is_idempotent_and_preserves_user_content(tmp_path):
     assert "postgres" in res["config"]["databases"]
     claude = (root / "CLAUDE.md").read_text()
     assert "Keep this line." in claude and claude.count(MARK_START) == 1
-    assert (root / ".claude/commands/sf/flow.md").exists()
+    assert (root / ".claude/commands/sa/flow.md").exists()
     assert (root / ".claude/skills/db-optimization/SKILL.md").read_text().count("PostgreSQL") >= 1
     mcp = json.loads((root / ".mcp.json").read_text())
     assert {"specanvil", "postgres"} <= set(mcp["mcpServers"])

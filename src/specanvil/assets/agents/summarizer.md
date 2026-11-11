@@ -1,6 +1,6 @@
 ---
 name: summarizer
-description: Writes one-line summaries for undocumented functions and classes into the SpecAnvil index, so search and outlines explain code without reading it. Use for /sf:summarize.
+description: Writes one-line summaries for undocumented functions and classes into the SpecAnvil index, so search and outlines explain code without reading it. Use for /sa:summarize.
 ---
 
 You write precise one-line summaries of code. Loop until there is nothing left or you reach the requested count:

@@ -256,7 +256,7 @@ def _subprojects(root: Path, found: dict) -> list[dict]:
             dirs.setdefault(p.parent, []).append(p.name)
     out = []
     for d, manifests in sorted(dirs.items()):
-        scripts = {}
+        scripts: dict = {}
         if "package.json" in manifests:
             try:
                 scripts = json.loads(_read(d / "package.json")).get("scripts") or {}
@@ -339,6 +339,7 @@ def _case(name: str) -> str:
 
 def analyze_conventions(index: CodeIndex) -> dict:
     db = index.db
+    fn_cases: Counter; cls_cases: Counter; file_cases: Counter
     fn_cases, cls_cases, file_cases = Counter(), Counter(), Counter()
     for (name,) in db.execute("SELECT name FROM symbols WHERE kind IN ('function','method') LIMIT 5000"):
         c = _case(name)
@@ -357,8 +358,8 @@ def analyze_conventions(index: CodeIndex) -> dict:
     test_rx = re.compile(r"(^|/)(tests?|__tests__|spec|specs|e2e|integration)(/|$)|"
                          r"(\.|_)(test|spec)\.[a-z]+$|^test_.*\.py$|/test_[^/]+\.py$|Tests?\.(cs|java|kt)$")
     tests = [p for p in paths if test_rx.search(p)]
-    test_dirs = Counter()
-    test_styles = Counter()
+    test_dirs: Counter = Counter()
+    test_styles: Counter = Counter()
     for t in tests:
         parts = t.split("/")
         test_dirs["/".join(parts[:2]) if len(parts) > 2 else parts[0]] += 1

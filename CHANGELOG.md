@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+- **Workflows are `/sa:<name>`** (were `/sf:<name>`, from the old name) in every tool: `/sa-groom` in Copilot and Cursor, `#sa-groom` in Kiro, `sa-groom` skills in Codex and Windsurf. Shared packs are `.sapack` (old `.sfpack` files still import). **Breaking:** run `specanvil init` once in each repo; it removes the old workflow and role files it wrote and writes the new ones. Files you added yourself are left alone.
+- **Pull-request comment**: `specanvil pr-comment [--base REF] [-o file]` writes change risk per changed symbol and spec drift as Markdown. The GitHub Action from `init --ci` posts it on each pull request and updates the same comment on later pushes.
+- **C# in the retrieval gate**: 16 questions on eShopOnWeb. The multi-repo suite is now 90 questions in 5 languages: found 0.94, MRR 0.73 (C# alone 0.88 / 0.75). A paraphrased copy of the C# set is kept as an ungated record of the vocabulary gap (0.62 / 0.31). Details in `docs/BENCHMARKS.md`.
+- **Tighter ratchets**: type errors 100 → 71 (CI ceiling lowered to 71); coverage floor 72% → 75% (measured 78%).
+- **Project files**: `ROADMAP.md`, `docs/RELEASING.md` (PyPI publishing and repository rename steps), issue forms, pull-request template, Dependabot for pip and GitHub Actions.
+- README: the tool-tier sentence was printed twice; the command count now says 21, or 22 in an OpenSpec repo.
+- 96 tools; 67 unit tests.
+
 ## 0.9.0
 - **Renamed SpecForge → SpecAnvil** (package, commands, MCP server, docs). The PyPI name is `specanvil`.
 - **Upgrades in place**: on the next `init` (or `uninstall`), a repo set up as SpecForge has `.specforge/` moved to `.specanvil/`, `~/.specforge` moved to `~/.specanvil`, and the old server entries, hook commands, permission and rules markers rewritten in every shared file, with no duplicates and user content kept. `SPECFORGE_*` environment variables are still honoured; `specforge` and `specforge-mcp` remain as command aliases.

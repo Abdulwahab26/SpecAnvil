@@ -123,6 +123,7 @@ def suggest_corrections(ix: CodeIndex, days: int = 30, apply: bool = False, min_
         raise ValueError("No searches logged yet. The ledger fills as agents use search_symbols / get_context.")
     zero = [e for e in eps if e["n"] == 0]
     churn = [e for e in eps if not e["fetched"] and e["next_query_s"] is not None and e["next_query_s"] < 60]
+    gaps: Counter
     ranks, outside, gaps = [], [], Counter()
     gap_examples: dict[tuple, list] = defaultdict(list)
     for e in eps:

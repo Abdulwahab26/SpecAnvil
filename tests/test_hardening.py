@@ -110,3 +110,63 @@ def test_old_environment_variable_names_still_work():
     out = subprocess.run([sys.executable, "-c", "import specanvil, os; print(os.environ.get('SPECANVIL_TOOLS'))"],
                          env={**__import__("os").environ, "SPECFORGE_TOOLS": "core"}, capture_output=True, text=True)
     assert out.stdout.strip() == "core"
+
+
+def test_old_sf_workflow_files_are_replaced_by_sa_on_upgrade(tmp_path, monkeypatch):
+    """Workflows moved from /sf: to /sa: in 0.10: init must remove the old files, not leave every workflow twice."""
+    from helpers import make_repo
+
+    from specanvil import bootstrap
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
+    (tmp_path / "repo").mkdir()
+    root = make_repo(tmp_path / "repo")
+    old = [".claude/commands/sf/groom.md", ".cursor/commands/sf-groom.md", ".github/prompts/sf-flow.prompt.md",
+           ".github/agents/sf-architect.agent.md", ".agents/skills/sf-plan/SKILL.md"]
+    mine = [".claude/commands/sf/my-own.md", ".claude/commands/deploy.md"]
+    for rel in old + mine:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("old\n", encoding="utf-8")
+    (root / ".specanvil").mkdir()
+    (root / ".specanvil" / "manifest.json").write_text(json.dumps(
+        {"tools": {"claude": [".claude/commands/sf/groom.md"], "cursor": [".cursor/commands/sf-groom.md"]}, "servers": {}}),
+        encoding="utf-8")
+    bootstrap.run(root, offline=True, agents="claude,cursor,copilot,codex")
+    assert not any((root / rel).exists() for rel in old)
+    assert all((root / rel).exists() for rel in mine)  # files SpecAnvil never wrote are left alone
+    assert (root / ".claude/commands/sa/groom.md").exists() and (root / ".cursor/commands/sa-groom.md").exists()
+    assert (root / ".agents/skills/sa-plan/SKILL.md").exists() and not (root / ".agents/skills/sf-plan").exists()
+    manifest = (root / ".specanvil" / "manifest.json").read_text(encoding="utf-8")
+    assert "/sa/groom.md" in manifest and "/sf/" not in manifest and "sf-" not in manifest
+    assert "/sf:" not in (root / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_pr_comment_reports_risk_and_drift(tmp_path, monkeypatch):
+    """`specanvil pr-comment`: the changed symbol is scored against the base ref and a broken spec reference is listed."""
+    import subprocess
+
+    from helpers import make_repo
+
+    from specanvil.bootstrap import run
+    from specanvil.report import PR_COMMENT_MARK, pr_comment
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
+    (tmp_path / "repo").mkdir()
+    root = make_repo(tmp_path / "repo")
+    run(root, offline=True, agents="claude")
+    (root / "specs" / "features" / "orders").mkdir(parents=True)
+    (root / "specs" / "features" / "orders" / "requirements.md").write_text(
+        "# Orders\n\nTotals come from `src/orders/service.py::total` and `src/orders/service.py::gone`.\n", encoding="utf-8")
+    git = ["git", "-c", "user.email=t@example.com", "-c", "user.name=t", "-C", str(root)]
+    subprocess.run(git + ["add", "-A"], check=True)
+    subprocess.run(git + ["commit", "-qm", "base"], check=True)
+    svc = root / "src" / "orders" / "service.py"
+    svc.write_text(svc.read_text().replace('return sum(i["price"] for i in items)',
+                                           'if not items:\n        return 0\n    return sum(i["price"] for i in items)'))
+    ix = CodeIndex(root)
+    ix.build()
+    text = pr_comment(root, ix, "HEAD")
+    assert text.startswith(PR_COMMENT_MARK)
+    assert "`src/orders/service.py::total`" in text and "Change risk:" in text
+    assert "src/orders/service.py::gone` is missing" in text
+    subprocess.run(git + ["commit", "-qam", "change"], check=True)
+    ix.build()
+    assert "Change risk:** none" in pr_comment(root, ix, "HEAD")

@@ -1,6 +1,6 @@
 ---
 name: unit-test-planner
-description: Deep unit-test analysis of a module; produces executable milestones with technical challenges and approaches for a smaller model to implement. Use for /sf:test-plan.
+description: Deep unit-test analysis of a module; produces executable milestones with technical challenges and approaches for a smaller model to implement. Use for /sa:test-plan.
 ---
 
 You are a principal engineer specialising in testability. Your output will be executed by a **smaller, cheaper model that must not need to make judgement calls**. Every ambiguity you leave becomes a bug or a blocked milestone.
@@ -21,4 +21,4 @@ Milestone rules:
 - `escalate_if` lists situations where the executor must stop and mark `blocked` instead of improvising (e.g. "needs refactor to inject the clock", "production code looks buggy for case C3").
 - Never plan changes to production code; if testability requires a refactor, make it a separate milestone flagged `requires_production_change: true` and leave it `blocked` with the reason.
 
-Finish with: milestone table, expected coverage gain, and the command to run: `/sf:test-run <module>`.
+Finish with: milestone table, expected coverage gain, and the command to run: `/sa:test-run <module>`.

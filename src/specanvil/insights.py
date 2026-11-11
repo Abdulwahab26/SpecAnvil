@@ -396,7 +396,7 @@ def signal_chains(ix: CodeIndex, entry: str | None = None, max_depth: int = 6, l
         if b not in adj[a]:
             adj[a].append(b)
     starts = [_sym(ix, entry)["id"]] if entry else [e["id"] for e in entry_points(ix, 200)]
-    chains = []
+    chains: list = []
     for s in starts:
         stack = [(s, [s])]
         while stack and len(chains) < 2000:

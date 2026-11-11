@@ -78,7 +78,7 @@ MONO_ROOTS = {"packages", "apps", "services", "libs", "modules", "projects", "co
 
 
 def split_terms(*texts: str) -> str:
-    out = []
+    out: list = []
     for t in texts:
         for w in re.split(r"[^A-Za-z0-9]+", t or ""):
             out.extend(p.lower() for p in _CAMEL.findall(w))
@@ -873,6 +873,7 @@ class CodeIndex:
         if path_glob:
             cmd += ["--glob", path_glob]
         cmd += ["--", "."]
+        files: list
         out, files = [], []
         try:
             proc = subprocess.Popen(cmd, cwd=self.root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,

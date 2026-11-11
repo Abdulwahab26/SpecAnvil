@@ -1,6 +1,6 @@
 ---
 name: unit-test-planning
-description: Schema and rules for unit-test milestone plans (milestones.json) shared by the planner and executor agents. Use for /sf:test-plan and /sf:test-run.
+description: Schema and rules for unit-test milestone plans (milestones.json) shared by the planner and executor agents. Use for /sa:test-plan and /sa:test-run.
 ---
 
 # Unit-test milestone plans

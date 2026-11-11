@@ -1,6 +1,6 @@
 ---
 name: playwright-e2e
-description: Playwright E2E conventions - exploring with Playwright MCP, locator strategy, page objects, fixtures, flake prevention. Use for /sf:e2e and any browser test work.
+description: Playwright E2E conventions - exploring with Playwright MCP, locator strategy, page objects, fixtures, flake prevention. Use for /sa:e2e and any browser test work.
 ---
 
 # Playwright E2E

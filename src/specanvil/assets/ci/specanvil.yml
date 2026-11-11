@@ -1,20 +1,42 @@
 # Fails the build when code changes break the specs (renamed/deleted symbols, or code changed
-# since the spec was last verified). Runs fully inside CI; no AI calls, no external services.
+# since the spec was last verified), and comments change risk + spec drift on each pull request.
+# Runs fully inside CI; no AI calls, no external services.
 name: specanvil
 on:
   pull_request:
   push:
     branches: [main]
+permissions:
+  contents: read
+  pull-requests: write   # only used to post the comment below
 jobs:
   spec-drift:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the risk score needs the base branch and recent history
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       # Replace with your published package or fork URL
       - run: pip install "specanvil @ git+https://github.com/YOUR_GITHUB_USER/specanvil"
+      - name: Comment change risk and spec drift on the pull request
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true   # a failed comment must never fail the build; the checks below decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          specanvil pr-comment --base "$BASE" -o comment.md
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+               --jq '.[] | select(.body | startswith("<!-- specanvil:pr-comment -->")) | .id' | tail -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md > /dev/null
+          else
+            gh pr comment "$PR" --body-file comment.md
+          fi
       - run: specanvil drift --strict
       - run: specanvil docs check --strict
       - run: specanvil report

@@ -2,7 +2,7 @@
 
 Fetch (explicit, network):  npm:<name>[@ver]   pypi:<name>[@ver]   go:<module>[@ver]   gh:<owner>/<repo>[@tag]
 Catalog:                     `specanvil pack add react` resolves through assets/packs/catalog.json
-Share (offline):             `specanvil pack export npm:react -o react.sfpack` / `specanvil pack import react.sfpack`
+Share (offline):             `specanvil pack export npm:react -o react.sapack` / `specanvil pack import react.sapack`
 
 Archives are extracted safely (no absolute paths, no `..`, size caps) under ~/.specanvil/sources/packs and
 registered as sources, so every tool accepts source="npm:react".
@@ -164,11 +164,11 @@ def add(spec: str) -> dict:
 
 
 def export(source: str, out: Path) -> dict:
-    """Write a shareable .sfpack (zip: meta.json + the indexed source files). Recipients index locally on import."""
+    """Write a shareable .sapack (zip: meta.json + the indexed source files). Recipients index locally on import."""
     from .sources import open_source, registry
     ix = open_source(source)
     reg = registry()
-    meta = next((v for k, v in reg.items() if k == source or v["key"] == source), {})
+    meta: dict = next((v for k, v in reg.items() if k == source or v["key"] == source), {})
     files = [r[0] for r in ix.db.execute("SELECT path FROM files")]
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("meta.json", json.dumps({"source": source, "key": meta.get("key", source),
@@ -185,7 +185,7 @@ def import_pack(path: Path) -> dict:
     with zipfile.ZipFile(path) as z:
         meta = json.loads(z.read("meta.json"))
         if meta.get("format") != 1:
-            raise ValueError("Unsupported .sfpack format")
+            raise ValueError("Unsupported .sapack format")
         root = home() / "sources" / "packs" / "imported" / re.sub(r"[^\w.@-]+", "_", meta["key"])
         root.mkdir(parents=True, exist_ok=True)
         for info in z.infolist():

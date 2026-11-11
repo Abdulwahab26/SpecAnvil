@@ -1,0 +1,113 @@
+{
+ "repo": "dotnet-architecture/eShopOnWeb",
+ "budget_tokens": 4000,
+ "note": "Same 16 targets as suite/eshoponweb.json, asked in words the code does not use (cart for basket, product for catalog item). Not a CI gate: it records the vocabulary gap.",
+ "cases": [
+  {
+   "task": "place an order from the customer's basket",
+   "expected": [
+    "CreateOrderAsync"
+   ]
+  },
+  {
+   "task": "put a product in the shopping cart",
+   "expected": [
+    "AddItemToBasket",
+    "AddItem"
+   ]
+  },
+  {
+   "task": "move an anonymous visitor's cart to their account after login",
+   "expected": [
+    "TransferBasketAsync",
+    "SetNewBuyerId"
+   ]
+  },
+  {
+   "task": "change how many of each product is in the cart",
+   "expected": [
+    "SetQuantities"
+   ]
+  },
+  {
+   "task": "empty the cart once checkout is finished",
+   "expected": [
+    "DeleteBasketAsync"
+   ]
+  },
+  {
+   "task": "compute the total price of an order",
+   "expected": [
+    "Total"
+   ]
+  },
+  {
+   "task": "issue a JWT for a signed-in user",
+   "expected": [
+    "GetTokenAsync",
+    "IdentityTokenClaimService"
+   ]
+  },
+  {
+   "task": "turn unhandled errors into an API error response",
+   "expected": [
+    "HandleExceptionAsync",
+    "ExceptionMiddleware"
+   ]
+  },
+  {
+   "task": "list products filtered by brand and type with paging",
+   "expected": [
+    "GetCatalogItems",
+    "CatalogFilterPaginatedSpecification"
+   ]
+  },
+  {
+   "task": "check that an uploaded picture has an allowed file type",
+   "expected": [
+    "IsValidImage",
+    "IsExtensionValid"
+   ]
+  },
+  {
+   "task": "build the full image URL for a product",
+   "expected": [
+    "ComposePicUri"
+   ]
+  },
+  {
+   "task": "show the signed-in customer's past orders",
+   "expected": [
+    "MyOrders",
+    "GetMyOrdersHandler",
+    "CustomerOrdersSpecification"
+   ]
+  },
+  {
+   "task": "fill the database with sample products on first start",
+   "expected": [
+    "SeedAsync",
+    "CatalogContextSeed"
+   ]
+  },
+  {
+   "task": "rename a product and change its price",
+   "expected": [
+    "UpdateDetails"
+   ]
+  },
+  {
+   "task": "let a user change their password",
+   "expected": [
+    "ChangePassword"
+   ]
+  },
+  {
+   "task": "submit the checkout page",
+   "expected": [
+    "OnPost",
+    "CheckoutModel"
+   ]
+  }
+ ]
+}

@@ -188,6 +188,7 @@ def dependency_graph(ix: CodeIndex, path: str, depth: int = 1, direction: str = 
     folder = _folder(ix, path)
     if folder and not ix.db.execute("SELECT 1 FROM files WHERE path=?", (path,)).fetchone():
         inside = lambda p: p.startswith(folder + "/")  # noqa: E731
+        outs: dict; ins: dict
         outs, ins = {}, {}
         for src, dst in ix.db.execute("SELECT src, dst FROM file_deps WHERE src LIKE ? OR dst LIKE ?",
                                       (folder + "/%", folder + "/%")):

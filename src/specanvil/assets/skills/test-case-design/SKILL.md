@@ -1,6 +1,6 @@
 ---
 name: test-case-design
-description: Formal manual test design techniques and the test case format used here. Use for /sf:qa and whenever writing test cases or test plans.
+description: Formal manual test design techniques and the test case format used here. Use for /sa:qa and whenever writing test cases or test plans.
 ---
 
 # Test case design

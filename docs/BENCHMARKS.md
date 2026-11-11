@@ -81,6 +81,21 @@ python tests/evals/run_context_eval.py <full-stack-fastapi-template> tests/evals
 
 The first run of this suite scored 0.89 / 0.61 and exposed three general defects, each fixed for every language rather than per question: doc comments were not indexed for Go, Java or most JavaScript (0 of 1,155 gin functions had one; now comment blocks above symbols and Python docstrings after long signatures are read); the stemmer did not connect verb/noun families (validate / validation, depend / dependency, authenticate / authentication); config keys and doc sections outranked code for plain-English questions. FastAPI is the known weak spot: its documentation examples and tests use the API far more often than the library defines it.
 
+### 0.10: C# added to the suite
+
+16 questions on [dotnet-architecture/eShopOnWeb](https://github.com/dotnet-architecture/eShopOnWeb) (ASP.NET Core, commit `4da8212`), written in the repo's own nouns like the other four sets. No ranking code was changed for them.
+
+| Repo | Language | Questions | Needed symbol in context | Full body | MRR |
+|---|---|---|---|---|---|
+| dotnet-architecture/eShopOnWeb | C# | 16 | 0.88 | 0.81 | 0.75 |
+| **All five repos** | | **90** | **0.94** | **0.89** | **0.73** |
+
+The CI gate is unchanged (found >= 0.90, MRR >= 0.60) and now runs on all 90 questions.
+
+Two C# questions miss. Both targets (`ComposePicUri`, `UpdateDetails`) match only one or two task words, while a dozen `CatalogItem` symbols match the common words "catalog" and "item" and fill the budget first: every task word counts the same, however common it is in the repo. Weighting rare words higher was tried and not kept: the suite's MRR rose from 0.73 to 0.74, but the original 12-question eval fell from 0.86 to 0.79.
+
+**The same 16 targets asked in other words** (`tests/evals/paraphrase_eshoponweb.json`: "cart" for basket, "product" for catalog item, "JWT" for token) score found 0.62, MRR 0.31 without embeddings. This set is not a gate. It records the vocabulary gap that `specanvil embed` and learned synonym rules (`suggest_corrections`) exist to close, and it is the number to move next.
+
 **Call graph against execution** (`tests/evals/run_graph_eval.py`): the unit tests run under a profiler; 751 distinct caller → callee pairs between functions in `src/specanvil` were observed. The static graph contains 91% of them. On the first, smaller trace (558 pairs) it was 87%, then 96% after linking class instantiation to constructors and reading calls inside interpolated strings; adding tests that call every tool and command widened the trace to 751 pairs and exposed callbacks passed as values and functions reached through re-exporting modules, both now resolved (88% → 91%). The remaining misses are attribute chains whose receiver type is unknown (`self.facts.get(...)`) and dispatch tables. Dead-code reports contradicted by execution: 0 of 4; all five reported items were genuinely unused and have been removed.
 
 **Scale** (kubernetes/kubernetes at `7898e97f`, 2 vCPU): 25,126 files, 397,268 symbols, 453,521 call sites, 58,815 import edges. Cold index 67 s (parse 39 s, write 28 s); peak memory 393 MB (906 MB before batching the build); refresh with no changes 0.31 s; symbol search ~70 ms; `get_context` ~130 ms; index 508 MB. Search cost at this size is scoring very common words (113,562 symbols match `pod*`); prefix indexes were measured and do not help (59 vs 68 ms), so they were dropped, which with compaction after rebuilds halves the index on ordinary repos (fastapi 66 MB → 32–41 MB).

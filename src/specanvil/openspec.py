@@ -296,6 +296,7 @@ def coverage(root: Path, ix: CodeIndex, target: str | None = None, limit: int = 
         groups = [(n, c["path"], c["requirements"]) for n, c in caps.items()]
     tests = test_titles(ix)
     norm = [(re.sub(r"[^a-z0-9]+", " ", t["title"].lower()).strip(), t) for t in tests]
+    rows: list
     rows, counts = [], {"explicit": 0, "likely": 0, "none": 0}
     by_group: dict[str, dict] = {}
     for gname, gpath, reqs in groups:

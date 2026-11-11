@@ -16,7 +16,7 @@ While implementing:
 - Type everything; no `any` unless the repo already does it there.
 - Handle loading, empty, error and success states, plus disabled/pending states on actions.
 - Accessibility: semantic elements, labels, keyboard focus, visible focus, contrast; images have alt text.
-- Add the `data-testid`s from the design so `/sf:e2e` can target them; prefer role/label selectors in tests.
+- Add the `data-testid`s from the design so `/sa:e2e` can target them; prefer role/label selectors in tests.
 - No new dependency without saying why in the task notes.
 - Write or update component/unit tests next to the code in the repo's style.
 

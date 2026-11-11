@@ -28,4 +28,4 @@ You are the **architect**. Read `{{features_dir}}/$ARGUMENTS*/requirements.md` (
 
 Follow the conventions spec; if you must deviate, say why. Set `status: designed` in requirements.md.
 
-Next step: `/sf:plan $ARGUMENTS`.
+Next step: `/sa:plan $ARGUMENTS`.
