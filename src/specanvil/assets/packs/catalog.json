@@ -1,0 +1,260 @@
+{
+ "_note": "Curated starter packs. `specanvil pack add <name>[@version]` fetches the published source (no install needed) and indexes it once per version under ~/.specanvil/sources.",
+ "packs": {
+  "react": {
+   "source": "npm:react",
+   "ecosystem": "js",
+   "about": "React UI library"
+  },
+  "react-dom": {
+   "source": "npm:react-dom",
+   "ecosystem": "js",
+   "about": "React DOM renderer"
+  },
+  "next": {
+   "source": "npm:next",
+   "ecosystem": "js",
+   "about": "Next.js framework"
+  },
+  "vue": {
+   "source": "npm:vue",
+   "ecosystem": "js",
+   "about": "Vue 3"
+  },
+  "nuxt": {
+   "source": "npm:nuxt",
+   "ecosystem": "js",
+   "about": "Nuxt"
+  },
+  "svelte": {
+   "source": "npm:svelte",
+   "ecosystem": "js",
+   "about": "Svelte compiler/runtime"
+  },
+  "angular": {
+   "source": "npm:@angular/core",
+   "ecosystem": "js",
+   "about": "Angular core"
+  },
+  "express": {
+   "source": "npm:express",
+   "ecosystem": "js",
+   "about": "Express web framework"
+  },
+  "fastify": {
+   "source": "npm:fastify",
+   "ecosystem": "js",
+   "about": "Fastify web framework"
+  },
+  "nestjs": {
+   "source": "npm:@nestjs/core",
+   "ecosystem": "js",
+   "about": "NestJS core"
+  },
+  "hono": {
+   "source": "npm:hono",
+   "ecosystem": "js",
+   "about": "Hono web framework"
+  },
+  "prisma": {
+   "source": "npm:@prisma/client",
+   "ecosystem": "js",
+   "about": "Prisma client"
+  },
+  "typeorm": {
+   "source": "npm:typeorm",
+   "ecosystem": "js",
+   "about": "TypeORM"
+  },
+  "drizzle": {
+   "source": "npm:drizzle-orm",
+   "ecosystem": "js",
+   "about": "Drizzle ORM"
+  },
+  "zod": {
+   "source": "npm:zod",
+   "ecosystem": "js",
+   "about": "Zod validation"
+  },
+  "tanstack-query": {
+   "source": "npm:@tanstack/query-core",
+   "ecosystem": "js",
+   "about": "TanStack Query core"
+  },
+  "redux": {
+   "source": "npm:@reduxjs/toolkit",
+   "ecosystem": "js",
+   "about": "Redux Toolkit"
+  },
+  "axios": {
+   "source": "npm:axios",
+   "ecosystem": "js",
+   "about": "Axios HTTP client"
+  },
+  "playwright": {
+   "source": "npm:playwright-core",
+   "ecosystem": "js",
+   "about": "Playwright core"
+  },
+  "vitest": {
+   "source": "npm:vitest",
+   "ecosystem": "js",
+   "about": "Vitest"
+  },
+  "jest": {
+   "source": "npm:jest",
+   "ecosystem": "js",
+   "about": "Jest"
+  },
+  "rxjs": {
+   "source": "npm:rxjs",
+   "ecosystem": "js",
+   "about": "RxJS"
+  },
+  "socket.io": {
+   "source": "npm:socket.io",
+   "ecosystem": "js",
+   "about": "Socket.IO server"
+  },
+  "mongoose": {
+   "source": "npm:mongoose",
+   "ecosystem": "js",
+   "about": "Mongoose ODM"
+  },
+  "azure-functions-node": {
+   "source": "npm:@azure/functions",
+   "ecosystem": "js",
+   "about": "Azure Functions Node v4 programming model"
+  },
+  "django": {
+   "source": "pypi:django",
+   "ecosystem": "python",
+   "about": "Django"
+  },
+  "fastapi": {
+   "source": "pypi:fastapi",
+   "ecosystem": "python",
+   "about": "FastAPI"
+  },
+  "flask": {
+   "source": "pypi:flask",
+   "ecosystem": "python",
+   "about": "Flask"
+  },
+  "starlette": {
+   "source": "pypi:starlette",
+   "ecosystem": "python",
+   "about": "Starlette"
+  },
+  "sqlalchemy": {
+   "source": "pypi:sqlalchemy",
+   "ecosystem": "python",
+   "about": "SQLAlchemy"
+  },
+  "sqlmodel": {
+   "source": "pypi:sqlmodel",
+   "ecosystem": "python",
+   "about": "SQLModel"
+  },
+  "pydantic": {
+   "source": "pypi:pydantic",
+   "ecosystem": "python",
+   "about": "Pydantic"
+  },
+  "celery": {
+   "source": "pypi:celery",
+   "ecosystem": "python",
+   "about": "Celery"
+  },
+  "requests": {
+   "source": "pypi:requests",
+   "ecosystem": "python",
+   "about": "Requests"
+  },
+  "httpx": {
+   "source": "pypi:httpx",
+   "ecosystem": "python",
+   "about": "HTTPX"
+  },
+  "pytest": {
+   "source": "pypi:pytest",
+   "ecosystem": "python",
+   "about": "pytest"
+  },
+  "alembic": {
+   "source": "pypi:alembic",
+   "ecosystem": "python",
+   "about": "Alembic migrations"
+  },
+  "azure-functions-python": {
+   "source": "pypi:azure-functions",
+   "ecosystem": "python",
+   "about": "Azure Functions Python library"
+  },
+  "boto3": {
+   "source": "pypi:boto3",
+   "ecosystem": "python",
+   "about": "AWS SDK for Python (thin client)"
+  },
+  "langchain-core": {
+   "source": "pypi:langchain-core",
+   "ecosystem": "python",
+   "about": "LangChain core"
+  },
+  "anthropic": {
+   "source": "pypi:anthropic",
+   "ecosystem": "python",
+   "about": "Anthropic Python SDK"
+  },
+  "mcp": {
+   "source": "pypi:mcp",
+   "ecosystem": "python",
+   "about": "Model Context Protocol SDK"
+  },
+  "gin": {
+   "source": "go:github.com/gin-gonic/gin",
+   "ecosystem": "go",
+   "about": "Gin web framework"
+  },
+  "echo": {
+   "source": "go:github.com/labstack/echo/v4",
+   "ecosystem": "go",
+   "about": "Echo web framework"
+  },
+  "fiber": {
+   "source": "go:github.com/gofiber/fiber/v2",
+   "ecosystem": "go",
+   "about": "Fiber web framework"
+  },
+  "gorm": {
+   "source": "go:gorm.io/gorm",
+   "ecosystem": "go",
+   "about": "GORM"
+  },
+  "cobra": {
+   "source": "go:github.com/spf13/cobra",
+   "ecosystem": "go",
+   "about": "Cobra CLI"
+  },
+  "chi": {
+   "source": "go:github.com/go-chi/chi/v5",
+   "ecosystem": "go",
+   "about": "chi router"
+  },
+  "spring-framework": {
+   "source": "gh:spring-projects/spring-framework",
+   "ecosystem": "java",
+   "about": "Spring Framework (large)"
+  },
+  "aspnetcore-samples": {
+   "source": "gh:dotnet/AspNetCore.Docs.Samples",
+   "ecosystem": "dotnet",
+   "about": "ASP.NET Core samples"
+  },
+  "azure-functions-dotnet-worker": {
+   "source": "gh:Azure/azure-functions-dotnet-worker",
+   "ecosystem": "dotnet",
+   "about": "Azure Functions .NET isolated worker"
+  }
+ }
+}

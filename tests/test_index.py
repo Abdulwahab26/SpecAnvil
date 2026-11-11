@@ -8,11 +8,11 @@ from helpers import (
     make_repo,
 )
 
-from specforge.bootstrap import MARK_START, run
-from specforge.index import CodeIndex, module_of, split_terms, stem
-from specforge.parser import _parse_regex, parse_source
-from specforge.specs import drift, lock_specs, read_section
-from specforge.tokens import redact
+from specanvil.bootstrap import MARK_START, run
+from specanvil.index import CodeIndex, module_of, split_terms, stem
+from specanvil.parser import _parse_regex, parse_source
+from specanvil.specs import drift, lock_specs, read_section
+from specanvil.tokens import redact
 
 
 def test_split_terms_and_stem():
@@ -74,7 +74,7 @@ def test_init_is_idempotent_and_preserves_user_content(tmp_path):
     assert (root / ".claude/commands/sf/flow.md").exists()
     assert (root / ".claude/skills/db-optimization/SKILL.md").read_text().count("PostgreSQL") >= 1
     mcp = json.loads((root / ".mcp.json").read_text())
-    assert {"specforge", "postgres"} <= set(mcp["mcpServers"])
+    assert {"specanvil", "postgres"} <= set(mcp["mcpServers"])
     # user edits a generated spec; a second run must keep it
     spec = root / "specs/conventions.md"
     spec.write_text(spec.read_text() + "\nTEAM RULE\n")
@@ -103,7 +103,7 @@ def test_indexing_makes_no_network_calls(tmp_path, monkeypatch):
     """Indexing must be fully local: block sockets and index languages whose grammar is not cached."""
     import socket
 
-    from specforge import parser
+    from specanvil import parser
 
     root = make_repo(tmp_path)
     (root / "lib.rb").write_text("class Greeter\n  def hello(name)\n    puts name\n  end\nend\n")
@@ -136,7 +136,7 @@ def test_incremental_fingerprints(tmp_path):
 
 
 def test_milestone_done_is_verified_by_running_tests(tmp_path):
-    from specforge import testing
+    from specanvil import testing
     root = make_repo(tmp_path)
     run(root, offline=True)
     d = testing.plan_dir(root, "orders")
@@ -157,7 +157,7 @@ def test_milestone_done_is_verified_by_running_tests(tmp_path):
 
 
 def test_plan_validation_catches_bad_plans(tmp_path):
-    from specforge import testing
+    from specanvil import testing
     root = make_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -172,7 +172,7 @@ def test_plan_validation_catches_bad_plans(tmp_path):
 def test_blocked_requires_reason(tmp_path):
     import pytest
 
-    from specforge import testing
+    from specanvil import testing
     root = make_repo(tmp_path)
     d = testing.plan_dir(root, "orders")
     d.mkdir(parents=True)
@@ -184,9 +184,9 @@ def test_blocked_requires_reason(tmp_path):
 def test_profile_models_render_into_agents(tmp_path, monkeypatch):
     import pytest
 
-    from specforge import profile
-    from specforge.bootstrap import sync_agents
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil import profile
+    from specanvil.bootstrap import sync_agents
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     root = make_repo(tmp_path / "repo")
     run(root, offline=True)
     planner = root / ".claude/agents/unit-test-planner.md"
@@ -202,7 +202,7 @@ def test_profile_models_render_into_agents(tmp_path, monkeypatch):
 
 
 def test_guard_hook_blocks_secrets(tmp_path):
-    from specforge.cli import _guard
+    from specanvil.cli import _guard
     assert _guard({"tool_name": "Read", "tool_input": {"file_path": "/r/.env"}, "cwd": str(tmp_path)}) == 2
     assert _guard({"tool_name": "Read", "tool_input": {"file_path": "/r/.env.example"}, "cwd": str(tmp_path)}) == 0
     assert _guard({"tool_name": "Bash", "tool_input": {"command": "cat config/.env"}, "cwd": str(tmp_path)}) == 2
@@ -210,7 +210,7 @@ def test_guard_hook_blocks_secrets(tmp_path):
 
 
 def test_docs_archetypes_check_register_and_stale(tmp_path):
-    from specforge.docs import DocEngine
+    from specanvil.docs import DocEngine
     root = _azure_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -249,7 +249,7 @@ def test_docs_archetypes_check_register_and_stale(tmp_path):
 
 
 def test_endpoint_extraction_prefixes_and_handlers(tmp_path):
-    from specforge.facts import Facts
+    from specanvil.facts import Facts
     (tmp_path / "api.py").write_text(
         'from fastapi import APIRouter\nrouter = APIRouter(prefix="/items", tags=["items"])\n\n'
         '@router.get("/")\ndef read_items():\n    return []\n\n@router.post(\n    "/{id}/archive"\n)\n'
@@ -269,7 +269,7 @@ def test_endpoint_extraction_prefixes_and_handlers(tmp_path):
 def test_session_dedupe_and_compaction_reset(tmp_path):
     import time as _t
 
-    from specforge.session import Session, touch_compaction_marker
+    from specanvil.session import Session, touch_compaction_marker
     root = make_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -285,7 +285,7 @@ def test_session_dedupe_and_compaction_reset(tmp_path):
 
 
 def test_focus_excerpt():
-    from specforge.analysis import excerpt
+    from specanvil.analysis import excerpt
     body = "def big(x):\n" + "".join(f"    step{i} = {i}\n" for i in range(30)) + "    if coupon_expired(x):\n        raise E\n    return x\n"
     out, cut = excerpt(body, "coupon")
     assert cut and "coupon_expired" in out and "def big" in out and "step15" not in out and "… (" in out
@@ -303,7 +303,7 @@ def test_declarations_and_graph_tables(tmp_path):
 
 
 def test_call_and_class_hierarchy_use_receiver(tmp_path):
-    from specforge import graph
+    from specanvil import graph
     root = _graph_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -316,7 +316,7 @@ def test_call_and_class_hierarchy_use_receiver(tmp_path):
 
 
 def test_dead_code_cycles_layers_importance(tmp_path):
-    from specforge import graph
+    from specanvil import graph
     root = _graph_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -331,7 +331,7 @@ def test_dead_code_cycles_layers_importance(tmp_path):
 
 
 def test_ast_presets_and_refactor_plans(tmp_path):
-    from specforge import astsearch, refactor
+    from specanvil import astsearch, refactor
     root = _graph_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -367,8 +367,8 @@ def test_semantic_endpoint_provider_and_remote_refusal(tmp_path):
 
     import pytest
 
-    from specforge import semantic
-    from specforge.config import load_config, save_config
+    from specanvil import semantic
+    from specanvil.config import load_config, save_config
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_POST(self):  # deterministic fake embeddings: bag of letters
@@ -403,8 +403,8 @@ def test_semantic_endpoint_provider_and_remote_refusal(tmp_path):
 
 
 def test_path_source_is_queryable(tmp_path, monkeypatch):
-    from specforge import sources
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil import sources
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     (tmp_path / "other").mkdir()
     other = _graph_repo(tmp_path / "other")
     res = sources.add(f"path:{other}", tmp_path)

@@ -8,7 +8,7 @@ from helpers import (
     _insight_repo,
 )
 
-from specforge.index import CodeIndex
+from specanvil.index import CodeIndex
 
 
 def test_config_keys_indexed_without_env_values(tmp_path):
@@ -26,7 +26,7 @@ def test_config_keys_indexed_without_env_values(tmp_path):
 
 
 def test_insights_complexity_tests_similarity(tmp_path):
-    from specforge import insights as I
+    from specanvil import insights as I
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -42,7 +42,7 @@ def test_insights_complexity_tests_similarity(tmp_path):
 
 
 def test_insights_structure_and_endpoints(tmp_path):
-    from specforge import insights as I
+    from specanvil import insights as I
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -68,7 +68,7 @@ def test_insights_structure_and_endpoints(tmp_path):
 
 
 def test_go_implicit_interface_implementations(tmp_path):
-    from specforge import insights as I
+    from specanvil import insights as I
     (tmp_path / "shape.go").write_text(
         "package shape\n\ntype Shape interface {\n\tArea() float64\n\tName() string\n}\n\ntype Square struct {\n\tside float64\n}\n\n"
         "func (s Square) Area() float64 { return s.side * s.side }\nfunc (s Square) Name() string { return \"sq\" }\n\n"
@@ -80,7 +80,7 @@ def test_go_implicit_interface_implementations(tmp_path):
 
 
 def test_history_tools(tmp_path):
-    from specforge import history as H
+    from specanvil import history as H
     root = _insight_repo(tmp_path)
     f = root / "app" / "crud.py"
     f.write_text(f.read_text().replace("return _save(User(name))", "user = User(name)\n    return _save(user)")
@@ -99,8 +99,8 @@ def test_history_tools(tmp_path):
 
 
 def test_diagrams_audit_coverage_session(tmp_path):
-    from specforge import agentaudit, diagrams, testing
-    from specforge.session import Session, touch_compaction_marker
+    from specanvil import agentaudit, diagrams, testing
+    from specanvil.session import Session, touch_compaction_marker
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -130,8 +130,8 @@ def test_pack_extraction_is_safe_and_sfpack_roundtrip(tmp_path, monkeypatch):
     import io
     import tarfile
 
-    from specforge import packs, sources
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil import packs, sources
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         for name, data in [("package/index.js", b"function hello(name) { return 'hi ' + name; }\nmodule.exports = hello;\n"),
@@ -165,7 +165,7 @@ def test_doc_sections_and_code_first_ranking(tmp_path):
 
 
 def test_monorepo_js_alias_resolves_inside_own_src(tmp_path):
-    from specforge import insights as I
+    from specanvil import insights as I
     (tmp_path / "backend" / "app").mkdir(parents=True)
     (tmp_path / "backend" / "app" / "utils.py").write_text("def x():\n    pass\n")
     (tmp_path / "frontend" / "src" / "components").mkdir(parents=True)
@@ -184,7 +184,7 @@ def test_monorepo_js_alias_resolves_inside_own_src(tmp_path):
 def test_vectors_from_another_model_are_never_mixed(tmp_path):
     from array import array
 
-    from specforge import semantic
+    from specanvil import semantic
     root = _graph_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -199,7 +199,7 @@ def test_vectors_from_another_model_are_never_mixed(tmp_path):
 
 
 def test_route_handlers_exercised_over_http_count_as_tested(tmp_path):
-    from specforge import insights as I
+    from specanvil import insights as I
     root = _insight_repo(tmp_path)
     (root / "tests" / "test_api.py").write_text(
         'def test_signup(client):\n    r = client.post(f"{API}/users/signup", json={"name": "a"})\n    assert r.status_code == 200\n')
@@ -211,7 +211,7 @@ def test_route_handlers_exercised_over_http_count_as_tested(tmp_path):
 
 
 def test_reparse_after_grammar_download_really_reparses(tmp_path, monkeypatch):
-    from specforge import parser
+    from specanvil import parser
     (tmp_path / "svc.py").write_text("class Svc:\n    def run(self):\n        return 1\n")
     monkeypatch.setattr(parser, "local_grammars", lambda refresh=False: set())
     ix = CodeIndex(tmp_path)

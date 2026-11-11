@@ -3,8 +3,8 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "specforge-ai"  # PyPI name ("specforge" there belongs to an unrelated project); commands stay specforge / specforge-mcp
-version = "0.8.0"
+name = "specanvil"  # formerly SpecForge
+version = "0.9.0"
 description = "Turn any repo into spec-driven development in one command: a token-saving code-index MCP, project-tailored skills, agent team, and lifecycle commands from grooming to Playwright E2E."
 readme = "README.md"
 license = { text = "MIT" }
@@ -20,8 +20,11 @@ dependencies = [
 semantic = ["fastembed>=0.3,<1"]
 
 [project.scripts]
-specforge = "specforge.cli:main"
-specforge-mcp = "specforge.server:main"
+specanvil = "specanvil.cli:main"
+specanvil-mcp = "specanvil.server:main"
+# old names from before the rename, so repos set up as "SpecForge" keep working
+specforge = "specanvil.cli:main"
+specforge-mcp = "specanvil.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/specforge"]
+packages = ["src/specanvil"]

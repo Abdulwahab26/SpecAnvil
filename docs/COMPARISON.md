@@ -1,12 +1,12 @@
-# SpecForge vs jCodeMunch
+# SpecAnvil vs jCodeMunch
 
-jCodeMunch (jgravelle/jcodemunch-mcp, measured at v1.108.431) is the most mature token-saving code-index MCP server, and it publishes a reproducible benchmark. This comparison uses **jCodeMunch's own benchmark**: its pinned repos, five queries, workflow and tokenizer. jCodeMunch's numbers come from **its own harness** (`benchmarks/harness/run_benchmark.py`, default `served` method); SpecForge runs the same workflow through its MCP server over stdio (`benchmarks/vs_jcodemunch.py`).
+jCodeMunch (jgravelle/jcodemunch-mcp, measured at v1.108.431) is the most mature token-saving code-index MCP server, and it publishes a reproducible benchmark. This comparison uses **jCodeMunch's own benchmark**: its pinned repos, five queries, workflow and tokenizer. jCodeMunch's numbers come from **its own harness** (`benchmarks/harness/run_benchmark.py`, default `served` method); SpecAnvil runs the same workflow through its MCP server over stdio (`benchmarks/vs_jcodemunch.py`).
 
 ## 1. Token efficiency (jCodeMunch's benchmark)
 
 Workflow per query: `search_symbols` (top 5) → fetch the top 3 symbols. 5 queries × 3 repos = 15 lookups. Tokens: tiktoken `cl100k_base`, counted on the text the server returns. Session dedupe **off**: every lookup measured fresh.
 
-| Repo (pinned commit) | jCodeMunch | SpecForge 0.8 |
+| Repo (pinned commit) | jCodeMunch | SpecAnvil 0.8 |
 |---|---|---|
 | expressjs/express `1faf228` | — | 2,005 |
 | fastapi/fastapi `a64dfbb` | — | 2,983 |
@@ -17,7 +17,7 @@ Workflow per query: `search_symbols` (top 5) → fetch the top 3 symbols. 5 quer
 
 ### Top-3 picks by hand (the benchmark doesn't score relevance)
 
-| Query | jCodeMunch | SpecForge 0.8 |
+| Query | jCodeMunch | SpecAnvil 0.8 |
 |---|---|---|
 | express · router route handler | `Route`, `debug`, `Router` (variables) | `Route._handles_method`, `Layer.handle_request`, `Layer.handle_error` |
 | express · param bind | `mergeParams`, `paramCallback`, `decode_param` | `app.param`, `paramCallback`, `decode_param` |
@@ -27,9 +27,9 @@ Workflow per query: `search_symbols` (top 5) → fetch the top 3 symbols. 5 quer
 | gin · middleware | 3 test functions | `Use`, `Engine.Use`, `RouterGroup.Use` |
 | gin · param bind | `param` (constant), `BindUnmarshaler`, `countParams` | `Context.Param`, `Param` (struct), `Params.ByName` |
 
-Both tools mostly land on framework internals. SpecForge's picks are more often the dispatch and registration code itself, and Go methods are receiver-qualified. One query (fastapi · request response) is weaker for SpecForge.
+Both tools mostly land on framework internals. SpecAnvil's picks are more often the dispatch and registration code itself, and Go methods are receiver-qualified. One query (fastapi · request response) is weaker for SpecAnvil.
 
-## 2. Retrieval quality (SpecForge's evals, `tests/evals`, gated in CI)
+## 2. Retrieval quality (SpecAnvil's evals, `tests/evals`, gated in CI)
 
 | Eval | Metric | Result |
 |---|---|---|
@@ -41,17 +41,17 @@ Both tools mostly land on framework internals. SpecForge's picks are more often 
 
 ## 3. Indexing
 
-| Repo | jCodeMunch cold `index --no-ai-summaries` | SpecForge 0.6 cold, through the MCP server (two runs) |
+| Repo | jCodeMunch cold `index --no-ai-summaries` | SpecAnvil 0.6 cold, through the MCP server (two runs) |
 |---|---|---|
 | express | 1.72 s | **0.26–0.28 s** |
 | fastapi | 7.07 s | **3.37–3.45 s** |
 | gin | 1.56 s | **0.32–0.39 s** |
 
-SpecForge also builds the call graph, inheritance table and resolved import graph in that time, and in 0.5 indexes twice as many symbols on fastapi (section 4). 0.5 fixed two things that inflated earlier timings: a first `reindex(full=True)` no longer indexes twice, and a full rebuild clears tables once instead of deleting row by row. Incremental refresh on Django (5.6k files): 0.11 s for no changes, 0.29 s for one file.
+SpecAnvil also builds the call graph, inheritance table and resolved import graph in that time, and in 0.5 indexes twice as many symbols on fastapi (section 4). 0.5 fixed two things that inflated earlier timings: a first `reindex(full=True)` no longer indexes twice, and a full rebuild clears tables once instead of deleting row by row. Incremental refresh on Django (5.6k files): 0.11 s for no changes, 0.29 s for one file.
 
 ## 4. Symbol coverage
 
-| Repo | jCodeMunch (its methodology table) | SpecForge 0.4 | SpecForge 0.5 total | of which code / config keys / doc sections |
+| Repo | jCodeMunch (its methodology table) | SpecAnvil 0.4 | SpecAnvil 0.5 total | of which code / config keys / doc sections |
 |---|---|---|---|---|
 | express | 1,085 | 712 | 994 | 712 / 179 / 103 |
 | fastapi | 13,699 | 8,137 | **26,842** | 8,137 / 3,386 / 15,319 |
@@ -61,11 +61,11 @@ jCodeMunch's totals include configuration keys (for example 189 from express's `
 
 ## 5. Tools: every jCodeMunch tool mapped
 
-jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94 are listed in its full tier. SpecForge 0.8 has 96 tools, and **every jCodeMunch tool has an implemented equivalent** (no partial or missing rows). Where jCodeMunch has three tools for one question, SpecForge often has one with a parameter, and some jCodeMunch tools are workflow guides that SpecForge ships as slash commands instead of schema.
+jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94 are listed in its full tier. SpecAnvil 0.8 has 96 tools, and **every jCodeMunch tool has an implemented equivalent** (no partial or missing rows). Where jCodeMunch has three tools for one question, SpecAnvil often has one with a parameter, and some jCodeMunch tools are workflow guides that SpecAnvil ships as slash commands instead of schema.
 
 **Search and retrieval**
 
-| jCodeMunch | SpecForge |
+| jCodeMunch | SpecAnvil |
 |---|---|
 | `search_symbols` | `search_symbols` (`mode=` lexical / hybrid / semantic / auto) |
 | `search_text` | `search_code` |
@@ -80,7 +80,7 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 
 **Graph and architecture**
 
-| jCodeMunch | SpecForge |
+| jCodeMunch | SpecAnvil |
 |---|---|
 | `get_call_hierarchy`, `get_class_hierarchy`, `get_symbol_importance` | `call_hierarchy`, `class_hierarchy`, `symbol_importance` |
 | `find_dead_code`, `get_dependency_cycles`, `get_coupling_metrics`, `get_layer_violations` | `dead_code`, `dependency_cycles`, `coupling`, `layer_violations` |
@@ -94,11 +94,11 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 | `get_decorator_census`, `get_endpoint_impact`, `get_parity_map`, `find_implementations` | `decorator_census`, `endpoint_impact` (incl. frontend callers), `parity_map`, `find_implementations` (incl. Go implicit interfaces) |
 | `get_repo_health`, `diff_health_radar` | `repo_health` (trend vs the previous run is built in) |
 | `plan_refactoring` | `plan_refactor` (rename / signature / move; extract via `extraction_candidates`) |
-| `render_diagram` | `render_diagram`, `specforge diagram -o x.html` |
+| `render_diagram` | `render_diagram`, `specanvil diagram -o x.html` |
 
 **History and runtime**
 
-| jCodeMunch | SpecForge |
+| jCodeMunch | SpecAnvil |
 |---|---|
 | `get_changed_symbols`, `get_symbol_diff` | `changed_symbols`, `symbol_diff` |
 | `get_symbol_provenance`, `get_churn_rate`, `digest`, `get_delivery_metrics` | `symbol_provenance` (with ticket keys and decision lines), `churn_rate`, `digest`, `delivery_metrics` |
@@ -109,7 +109,7 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 
 **Session, telemetry, config**
 
-| jCodeMunch | SpecForge |
+| jCodeMunch | SpecAnvil |
 |---|---|
 | `get_session_context`, `get_session_snapshot` | `session_snapshot` (survives compaction) |
 | `get_session_stats`, `analyze_perf` | `token_savings`, `tool_stats` (calls, avg / p95 ms, tokens) |
@@ -124,22 +124,22 @@ jCodeMunch v1.108.431 registers 98 tool names (counted from its `server.py`); 94
 
 **Indexing and sources**
 
-| jCodeMunch | SpecForge |
+| jCodeMunch | SpecAnvil |
 |---|---|
 | `index_repo` (GitHub), `index_folder`, `index_dependency` | `add_source gh:` / `path:` / `pkg:` (installed version) and `add_pack` (registry, no install) |
 | `index_file`, `register_edit`, `invalidate_cache` | PostToolUse re-index hook, 20 s auto-refresh, `reindex(full=True)` |
-| `get_watch_status` | `index_status`, `specforge watch` |
+| `get_watch_status` | `index_status`, `specanvil watch` |
 | `list_repos`, `list_workspaces`, `resolve_repo`, `get_cross_repo_map` | `list_workspaces`, `list_sources`, `cross_repo_map` |
 | `get_group_contracts` | `group_contracts`: provider symbol, signature, consuming repos and files, re-exports resolved (verified: full-stack-fastapi-template ↔ fastapi, 11 contracts, 0 unresolved) |
 | `get_project_intel` | config-key symbols + `doc_facts` (Docker, CI, compose, env templates, IaC) |
-| `embed_repo`, `summarize_repo` | `specforge embed` (CLI on purpose: the only step allowed to download), `summaries_needed` + `save_summaries` |
+| `embed_repo`, `summarize_repo` | `specanvil embed` (CLI on purpose: the only step allowed to download), `summaries_needed` + `save_summaries` |
 | `test_summarizer` | not needed: summaries are written by your own Claude session, so there is no provider connection to test; `summaries_needed` reports coverage |
 
-**SpecForge-only:** `entry_points`, `flow_edges` (route → handler, event emit → listeners, DI), spec tools (`read_spec`, `list_specs`, `spec_drift`), unit-test pipeline (`test_surface`, `validate_test_plan`, `next_test_milestone`, `update_test_milestone`), documentation engine (`doc_plan`, `doc_facts`, `doc_check`, `doc_register`), ticket tools (`ticket_keys`, `ticket_trace`, `backfill_progress`), `project_profile`, `get_profile`.
+**SpecAnvil-only:** `entry_points`, `flow_edges` (route → handler, event emit → listeners, DI), spec tools (`read_spec`, `list_specs`, `spec_drift`), unit-test pipeline (`test_surface`, `validate_test_plan`, `next_test_milestone`, `update_test_milestone`), documentation engine (`doc_plan`, `doc_facts`, `doc_check`, `doc_register`), ticket tools (`ticket_keys`, `ticket_trace`, `backfill_progress`), `project_profile`, `get_profile`.
 
 ## 6. Tool-schema cost per turn
 
-| Surface | jCodeMunch | SpecForge 0.6 |
+| Surface | jCodeMunch | SpecAnvil 0.6 |
 |---|---|---|
 | Default | 6 router tools, ~1,050 tokens | **`lite`: 6 tools, ~790 tokens** (`repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`) |
 | Mid | — | `core` 11 tools ~1,200 · `standard` 36 ~3,220 · `analysis` 66 ~5,700 |
@@ -149,17 +149,17 @@ Measured as tiktoken `cl100k_base` over each tool's name, description and input 
 
 ## 7. Semantic search, summaries, packs, watch
 
-| Feature | jCodeMunch | SpecForge 0.5 |
+| Feature | jCodeMunch | SpecAnvil 0.5 |
 |---|---|---|
-| Semantic / hybrid search | Optional embeddings | Body-vocabulary hybrid (no download) + optional local embeddings (fastembed ONNX, or Ollama / OpenAI-compatible **localhost** endpoint). Model downloaded only by the explicit `specforge embed`; query-time loads are offline (verified: 0 network connections) |
+| Semantic / hybrid search | Optional embeddings | Body-vocabulary hybrid (no download) + optional local embeddings (fastembed ONNX, or Ollama / OpenAI-compatible **localhost** endpoint). Model downloaded only by the explicit `specanvil embed`; query-time loads are offline (verified: 0 network connections) |
 | AI summaries | Provider APIs (Anthropic, Gemini, OpenAI-compatible…) or local | Written by **your own Claude session** via MCP on a cheap model from your profile. No extra API keys. Cached by code hash, marked `≈` |
 | Starter packs | Curated packs for popular frameworks | **51 curated packs** fetched from npm / PyPI / Go proxy / GitHub at any version, **no install needed**; plus packs from your installed versions; `.sfpack` export / import for offline sharing; safe extraction (no absolute paths, no `..`, size caps — tested) |
-| GitHub repo indexing | ✔ | ✔ `specforge source add gh:owner/repo[@ref]` |
-| Watch mode | ✔ | ✔ `specforge watch [--embed]` + PostToolUse re-index + MCP auto-refresh |
+| GitHub repo indexing | ✔ | ✔ `specanvil source add gh:owner/repo[@ref]` |
+| Watch mode | ✔ | ✔ `specanvil watch [--embed]` + PostToolUse re-index + MCP auto-refresh |
 
 ## 8. Track record
 
-jCodeMunch has a long public history and a user base; SpecForge is new. What SpecForge offers instead is evidence you can re-run:
+jCodeMunch has a long public history and a user base; SpecAnvil is new. What SpecAnvil offers instead is evidence you can re-run:
 
 - **CI on every push** (`.github/workflows/ci.yml`): unit tests on Ubuntu, macOS and Windows × Python 3.10 / 3.12 / 3.13; the retrieval eval as a **quality gate** (recall@any ≥ 0.95, MRR ≥ 0.75); a wheel built and smoke-tested in a clean environment.
 - **Tagged releases** (`release.yml`) with the matching CHANGELOG section as release notes.
@@ -168,11 +168,11 @@ jCodeMunch has a long public history and a user base; SpecForge is new. What Spe
 
 ## What remains in jCodeMunch's favour
 
-- **Public track record and user base.** This is the one gap code can't close: it takes releases, time and users. SpecForge's answer is evidence anyone can re-run (CI on every push across 3 OSes × 3 Pythons, a retrieval quality gate, end-to-end MCP suites, reproducible benchmarks, tagged releases) — but it is still a new project, and you should weigh it as one.
+- **Public track record and user base.** This is the one gap code can't close: it takes releases, time and users. SpecAnvil's answer is evidence anyone can re-run (CI on every push across 3 OSes × 3 Pythons, a retrieval quality gate, end-to-end MCP suites, reproducible benchmarks, tagged releases) — but it is still a new project, and you should weigh it as one.
 
 Every engineering gap from earlier comparisons (tool coverage, symbol counts, curated packs, OTel runtime traces, ranking-regret mining, runtime tier switching, default surface size) is closed in 0.6.
 
-## What SpecForge adds beyond a code index
+## What SpecAnvil adds beyond a code index
 
 - **−61% tokens** on jCodeMunch's own benchmark, **2–6× faster** cold indexing including graph building, more symbols on two of the three benchmark repos, a **24% smaller default** tool surface and a **72% smaller full** surface.
 - Features jCodeMunch doesn't have: route → handler / event / DI flow edges, entry points, HTTP-route mapping of traces, trace latency in risk scores, validated handoffs checked against the index, regret rules applied automatically to `get_context`, Go implicit-interface implementations, config keys and doc sections as fetchable symbols, `.sfpack` offline pack sharing.

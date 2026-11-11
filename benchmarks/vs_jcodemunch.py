@@ -2,7 +2,7 @@
 
 Same repos at the same pinned commits, same 5 queries, same workflow (search top 5 -> fetch top 3),
 same tokenizer (tiktoken cl100k_base), counted on the text the MCP server actually returns.
-SpecForge runs with session dedupe OFF (force=True) so each lookup is measured fresh, like theirs;
+SpecAnvil runs with session dedupe OFF (force=True) so each lookup is measured fresh, like theirs;
 a second pass reports the same 15 lookups in one session with dedupe ON.
 
     python benchmarks/vs_jcodemunch.py <express> <fastapi> <gin>
@@ -31,7 +31,7 @@ def text_of(res) -> str:
 
 async def run_repo(path: str, dedupe: bool, full: bool = False) -> dict:
     out = {"repo": path.rstrip("/").split("/")[-1], "queries": []}
-    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=path, env={**os.environ, "SPECFORGE_TOOLS": "full"})
+    params = StdioServerParameters(command="specanvil-mcp", args=[], cwd=path, env={**os.environ, "SPECANVIL_TOOLS": "full"})
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()

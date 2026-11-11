@@ -11,8 +11,8 @@ from pathlib import Path
 
 
 def reader(root: str, seconds: float, q, n: int) -> None:
-    from specforge import regret
-    from specforge.index import CodeIndex
+    from specanvil import regret
+    from specanvil.index import CodeIndex
     ix = CodeIndex(root)
     ops = errors = 0
     qs = ["create user", "password hash", "login token", "items list", "send email", "settings config"]
@@ -33,9 +33,9 @@ def reader(root: str, seconds: float, q, n: int) -> None:
 
 
 def writer(root: str, seconds: float, q) -> None:
-    from specforge.index import CodeIndex
+    from specanvil.index import CodeIndex
     ix = CodeIndex(root)
-    target = Path(root) / "specforge_stress_tmp.py"
+    target = Path(root) / "specanvil_stress_tmp.py"
     ops = 0
     end = time.time() + seconds
     try:
@@ -54,7 +54,7 @@ def writer(root: str, seconds: float, q) -> None:
 
 
 def main(root: str, seconds: float = 15.0, readers: int = 4) -> int:
-    from specforge.index import CodeIndex
+    from specanvil.index import CodeIndex
     CodeIndex(root).build()
     q: mp.Queue = mp.Queue()
     procs = [mp.Process(target=reader, args=(root, seconds, q, i)) for i in range(readers)]

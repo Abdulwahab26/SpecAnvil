@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from specforge.index import CodeIndex
+from specanvil.index import CodeIndex
 
 ID_RX = re.compile(r"^(?:### .*?\[(\d+)\]|- \[(\d+)\])", re.M)
 

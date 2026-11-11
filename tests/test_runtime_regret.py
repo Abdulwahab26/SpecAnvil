@@ -8,13 +8,13 @@ from helpers import (
     _otlp,
 )
 
-from specforge.index import CodeIndex
+from specanvil.index import CodeIndex
 
 
 def test_otel_trace_ingestion_and_latency(tmp_path):
     import gzip
 
-    from specforge import runtime as R
+    from specanvil import runtime as R
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -38,7 +38,7 @@ def test_otel_trace_ingestion_and_latency(tmp_path):
 
 
 def test_regret_ledger_suggests_and_applies_synonyms(tmp_path):
-    from specforge import regret
+    from specanvil import regret
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -55,7 +55,7 @@ def test_regret_ledger_suggests_and_applies_synonyms(tmp_path):
 
 
 def test_tune_weights_needs_cases_and_reports(tmp_path):
-    from specforge import regret
+    from specanvil import regret
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -70,7 +70,7 @@ def test_tune_weights_needs_cases_and_reports(tmp_path):
 
 
 def test_handoff_validation(tmp_path):
-    from specforge import handoff
+    from specanvil import handoff
     root = _insight_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -87,7 +87,7 @@ def test_handoff_validation(tmp_path):
 
 
 def test_compact_schema_keeps_arguments():
-    from specforge.server import _compact_schema
+    from specanvil.server import _compact_schema
     s = {"title": "fArguments", "type": "object", "properties": {
         "q": {"title": "Q", "type": "string"}, "k": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None, "title": "K"},
         "m": {"anyOf": [{"type": "integer"}, {"type": "string"}], "title": "M"}}, "required": ["q"]}
@@ -98,7 +98,7 @@ def test_compact_schema_keeps_arguments():
 
 
 def test_contract_import_parsing():
-    from specforge.insights import _imported_names
+    from specanvil.insights import _imported_names
     assert _imported_names("import { a, b as c } from 'lib/x'") == [("lib/x", ["a", "b"])]
     assert _imported_names("import D, { e } from \"lib\"") == [("lib", ["e", "default"])]
     assert _imported_names("const { f, g: h } = require('lib')") == [("lib", ["f", "g"])]

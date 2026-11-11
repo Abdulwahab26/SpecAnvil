@@ -1,6 +1,6 @@
 __pycache__/
 *.egg-info/
 dist/
-.specforge/
+.specanvil/
 .pytest_cache/
 .coverage

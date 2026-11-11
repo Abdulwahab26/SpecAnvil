@@ -1,14 +1,16 @@
-# SpecForge
+# SpecAnvil
+
+*Formerly SpecForge.* Repos set up under the old name upgrade automatically on the next `specanvil init`, and the old `specforge` / `specforge-mcp` commands keep working as aliases.
 
 [![CI](https://github.com/Abdulwahab26/Specforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Abdulwahab26/Specforge/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 
-**Turn any existing repo into spec-driven development with one command.** SpecForge indexes your code locally, learns your stack and conventions, and sets up everything your AI coding tool needs (Claude Code, GitHub Copilot, Cursor, Augment Code, Windsurf, Codex, Kiro, Gemini CLI or Replit) to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 13-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
+**Turn any existing repo into spec-driven development with one command.** SpecAnvil indexes your code locally, learns your stack and conventions, and sets up everything your AI coding tool needs (Claude Code, GitHub Copilot, Cursor, Augment Code, Windsurf, Codex, Kiro, Gemini CLI or Replit) to work like a disciplined team: a token-saving code-index MCP, project-specific skills, a 13-agent team, lifecycle commands from ticket grooming to Playwright E2E, a planner/executor unit-test pipeline on the models you choose, ticket-history backfill, complete repository documentation for any repo type (backend, frontend, QA automation, Azure Functions, Lambda, infra, library, CLI, data, mobile), and connectors for your ticket system and databases.
 
 Design notes and decision records: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · measured numbers: [docs/BENCHMARKS.md](docs/BENCHMARKS.md) · head-to-head: [docs/COMPARISON.md](docs/COMPARISON.md)
 
 ```bash
 cd your-repo
-specforge init        # ~1 second on a 250-file repo; no AI calls, nothing leaves your machine
+specanvil init        # ~1 second on a 250-file repo; no AI calls, nothing leaves your machine
 claude                # then: /sf:learn, /sf:flow PROJ-123
 ```
 
@@ -17,7 +19,7 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 | jCodeMunch's own benchmark (same repos, queries, workflow, tokenizer) | **61% fewer tokens** than jCodeMunch (6,799 vs 17,581; results now include each symbol's doc comment) |
 | Cold index incl. call/import graphs vs jCodeMunch (express / fastapi / gin) | **2–6× faster** (0.26–0.28 / 3.37–3.45 / 0.32–0.39 s vs 1.72 / 7.07 / 1.56 s) |
 | Symbols indexed vs jCodeMunch (express / fastapi / gin) | 994 / **26,842** / **1,960** vs 1,085 / 13,699 / 1,822 |
-| jCodeMunch's 98 tool names | **every one has an implemented equivalent** ([table](docs/COMPARISON.md#5-tools-every-jcodemunch-tool-mapped)), plus SpecForge-only tools |
+| jCodeMunch's 98 tool names | **every one has an implemented equivalent** ([table](docs/COMPARISON.md#5-tools-every-jcodemunch-tool-mapped)), plus SpecAnvil-only tools |
 | Tool schema per turn vs jCodeMunch | default **~790** vs ~1,050 tokens (6 tools each); everything (96 tools) **~8,120** vs ~28,142 |
 | Starter packs | **51** curated (npm / PyPI / Go / GitHub), fetched from the registry, **no install needed** |
 | Paraphrased tasks in `get_context` with local embeddings | **8/12** found (3/12 keyword-only) |
@@ -32,9 +34,9 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 
 ## Works with your AI coding tool
 
-`specforge init` detects which AI coding tools the repo already uses (from their config folders) and writes the same setup in each tool's own formats: always-on rules, the lifecycle workflows, role agents, skills and the MCP connection. Pick tools explicitly with `--agents cursor,copilot` or `--agents all`.
+`specanvil init` detects which AI coding tools the repo already uses (from their config folders) and writes the same setup in each tool's own formats: always-on rules, the lifecycle workflows, role agents, skills and the MCP connection. Pick tools explicitly with `--agents cursor,copilot` or `--agents all`.
 
-| Tool | Run a workflow | Files SpecForge writes |
+| Tool | Run a workflow | Files SpecAnvil writes |
 |---|---|---|
 | Claude Code | `/sf:groom` | `CLAUDE.md`, `.claude/commands`, `.claude/agents`, `.claude/skills`, `.mcp.json` |
 | GitHub Copilot | `/sf-groom` | `AGENTS.md`, `.github/prompts`, `.github/agents`, `.github/skills`, `.vscode/mcp.json` |
@@ -44,28 +46,28 @@ claude                # then: /sf:learn, /sf:flow PROJ-123
 | OpenAI Codex | `sf-groom` skill | `AGENTS.md`, `.agents/skills`, `.codex/agents`, `.codex/config.toml` |
 | Kiro | `#sf-groom` | `AGENTS.md`, `.kiro/steering`, feature specs in `.kiro/specs/`, `.kiro/settings/mcp.json` |
 | Gemini CLI | `/sf:groom` | `GEMINI.md`, `.gemini/commands/*.toml`, `.gemini/settings.json` |
-| Replit Agent | groom playbook | `replit.md`, `.specforge/playbooks`; tools via `specforge tool <name> '<json>'` (no local MCP) |
+| Replit Agent | groom playbook | `replit.md`, `.specanvil/playbooks`; tools via `specanvil tool <name> '<json>'` (no local MCP) |
 
 Details, per-tool limits and the documentation each format was checked against: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ## Already using OpenSpec?
 
-SpecForge detects an `openspec/` folder and works **inside it** instead of creating a second spec system. OpenSpec's own workflows keep creating, applying and archiving changes; SpecForge adds what they don't have:
+SpecAnvil detects an `openspec/` folder and works **inside it** instead of creating a second spec system. OpenSpec's own workflows keep creating, applying and archiving changes; SpecAnvil adds what they don't have:
 
 ```bash
-specforge openspec status              # capabilities, requirements, scenarios, active changes with task progress
-specforge openspec check [--strict]    # structure problems (no OpenSpec CLI needed) + code references that no longer resolve
-specforge openspec coverage [target]   # which scenarios have a test: explicit, likely, or none
-specforge openspec gaps                # code no capability spec mentions; /sf:baseline writes specs for it
+specanvil openspec status              # capabilities, requirements, scenarios, active changes with task progress
+specanvil openspec check [--strict]    # structure problems (no OpenSpec CLI needed) + code references that no longer resolve
+specanvil openspec coverage [target]   # which scenarios have a test: explicit, likely, or none
+specanvil openspec gaps                # code no capability spec mentions; /sf:baseline writes specs for it
 ```
-The lifecycle workflows read and write OpenSpec's files (proposal, delta specs, design, tasks) in OpenSpec's format, add a code map so drift is detected, and derive QA cases and Playwright tests from the scenarios. SpecForge's own generated context lives in `openspec/specforge/`. Measured on the OpenSpec project itself: 44 capabilities, 318 requirements and 1,039 scenarios parsed; 36% of scenarios matched to a test.
+The lifecycle workflows read and write OpenSpec's files (proposal, delta specs, design, tasks) in OpenSpec's format, add a code map so drift is detected, and derive QA cases and Playwright tests from the scenarios. SpecAnvil's own generated context lives in `openspec/specanvil/`. Measured on the OpenSpec project itself: 44 capabilities, 318 requirements and 1,039 scenarios parsed; 36% of scenarios matched to a test.
 
-## What `specforge init` creates
+## What `specanvil init` creates
 
 ```
 your-repo/
-├── CLAUDE.md                    # SpecForge block added (your content is kept)
-├── .mcp.json                    # specforge + matching connectors (no secrets; ${ENV} refs)
+├── CLAUDE.md                    # SpecAnvil block added (your content is kept)
+├── .mcp.json                    # specanvil + matching connectors (no secrets; ${ENV} refs)
 ├── .claude/
 │   ├── commands/sf/             # 21 commands (below)
 │   ├── agents/                  # spec-analyst, architect, frontend/backend engineer, db-optimizer,
@@ -80,10 +82,10 @@ your-repo/
 │   ├── conventions.md           # naming, layout, tests, lint + reference implementations
 │   ├── modules/<module>.md      # reverse-engineered public API with code refs
 │   └── features/_template/      # requirements, design, tasks, test-cases
-└── .specforge/                  # local index (SQLite), config, spec lock, report.html
+└── .specanvil/                  # local index (SQLite), config, spec lock, report.html
 ```
 
-Everything is **detected, not configured**: languages (300+ via tree-sitter, regex fallback for anything else), frameworks, ORMs, databases (from dependencies, docker-compose, Prisma, connection strings, `.env.example`, Spring/ASP.NET config), test tools, CI, ticket system (from git remotes, CI files and `PROJ-123` / `AB#123` keys in commit history), and per-sub-project commands in monorepos. Override anything in `.specforge/config.json` or with flags.
+Everything is **detected, not configured**: languages (300+ via tree-sitter, regex fallback for anything else), frameworks, ORMs, databases (from dependencies, docker-compose, Prisma, connection strings, `.env.example`, Spring/ASP.NET config), test tools, CI, ticket system (from git remotes, CI files and `PROJ-123` / `AB#123` keys in commit history), and per-sub-project commands in monorepos. Override anything in `.specanvil/config.json` or with flags.
 
 ## The workflow
 
@@ -102,7 +104,7 @@ Everything is **detected, not configured**: languages (300+ via tree-sitter, reg
 | `/sf:test-plan <module>` | unit-test-planner (**your planner model**) | Deep test analysis from `test_surface` (branches, side effects, existing tests, real coverage), then executable milestones with technical challenges and approaches, schema-validated |
 | `/sf:test-run <module>` | unit-test-executor (**your executor model**) | Implements milestones one by one; "done" is accepted only when the tool re-runs the tests and they pass; ambiguity is escalated as `blocked`, never improvised |
 | `/sf:backfill` | ticket-archaeologist | Opt-in: pulls Done / In Progress / In Review tickets through your ticket MCP and writes linked specs, resumable, in parallel batches |
-| `/sf:docs [missing\|stale\|all\|ids]` | doc-writer (**your docs model**) | Detects the repo type(s) and writes every required document (up to 25 for an Azure Functions repo) from locally extracted facts: endpoints, functions + triggers, settings, routes, test inventory, models, infra. `specforge docs check` enforces sections, full coverage (every endpoint/function/setting mentioned), no placeholders, valid links; docs go **stale** automatically when the code they describe changes |
+| `/sf:docs [missing\|stale\|all\|ids]` | doc-writer (**your docs model**) | Detects the repo type(s) and writes every required document (up to 25 for an Azure Functions repo) from locally extracted facts: endpoints, functions + triggers, settings, routes, test inventory, models, infra. `specanvil docs check` enforces sections, full coverage (every endpoint/function/setting mentioned), no placeholders, valid links; docs go **stale** automatically when the code they describe changes |
 | `/sf:analyze` | — | Architecture health: PageRank importance, hotspots, cycles, coupling, layer violations, dead code, risky AST patterns, with refactor plans |
 | `/sf:summarize` | summarizer (**your summarizer model**) | One-line summaries for undocumented code, written into the index (cached by code hash) to sharpen search and outlines |
 | `/sf:profile` | — | Show or change your models per role and backfill settings |
@@ -110,7 +112,7 @@ Everything is **detected, not configured**: languages (300+ via tree-sitter, reg
 
 ## The code-index MCP (token reduction)
 
-Agents burn most of their tokens reading whole files to find one function. `specforge-mcp` gives them surgical tools instead:
+Agents burn most of their tokens reading whole files to find one function. `specanvil-mcp` gives them surgical tools instead:
 
 | Tool | Returns |
 |---|---|
@@ -145,41 +147,41 @@ Agents burn most of their tokens reading whole files to find one function. `spec
 
 Besides code, the index holds **config keys** (`jobs.build.runs-on`, `scripts.test`, `services.db.image`; `.env` values are never stored) and **documentation sections** (Markdown / RST / AsciiDoc headings, fetchable one section at a time). Both rank below code unless the query asks for docs.
 
-Every call is logged against a *whole-file baseline* so the savings are measured, not claimed. `specforge stats` and `.specforge/report.html` show them.
+Every call is logged against a *whole-file baseline* so the savings are measured, not claimed. `specanvil stats` and `.specanvil/report.html` show them.
 
 ### Starter packs (no install)
 
 ```bash
-specforge pack list                  # 51 curated: react, next, vue, angular, express, nestjs, fastapi, django, flask, gin, spring-framework, azure-functions-*, …
-specforge pack add react             # fetches the published source from the registry, indexes it locally
-specforge pack add pypi:httpx@0.27.0 # or any npm:/pypi:/go:/gh: package at any version
-specforge pack export npm:react -o react.sfpack   # share a pack offline; `specforge pack import` on the other side
+specanvil pack list                  # 51 curated: react, next, vue, angular, express, nestjs, fastapi, django, flask, gin, spring-framework, azure-functions-*, …
+specanvil pack add react             # fetches the published source from the registry, indexes it locally
+specanvil pack add pypi:httpx@0.27.0 # or any npm:/pypi:/go:/gh: package at any version
+specanvil pack export npm:react -o react.sfpack   # share a pack offline; `specanvil pack import` on the other side
 ```
 Archives are extracted with path-traversal, absolute-path and size checks; packs are registered as sources, so every core tool accepts `source="npm:react"`.
 
-Tool tiers keep the per-turn schema small. The default `lite` tier is 6 tools (~790 tokens: `repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`); then `core` (11, ~1.2k), `standard` (36, ~3.2k), `analysis` (66, ~5.7k), `full` (96, ~8.1k; jCodeMunch's full surface is ~28k). Agents switch with `set_tool_tier` when a task needs more, or call a single tool with `run_tool`. Pin a tier with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`. Set with `"tool_tier"` in `.specforge/config.json` or `SPECFORGE_TOOLS`.
+Tool tiers keep the per-turn schema small. The default `lite` tier is 6 tools (~790 tokens: `repo_map`, `search_symbols`, `get_symbol`, `get_context`, `set_tool_tier`, `run_tool`); then `core` (11, ~1.2k), `standard` (36, ~3.2k), `analysis` (66, ~5.7k), `full` (96, ~8.1k; jCodeMunch's full surface is ~28k). Agents switch with `set_tool_tier` when a task needs more, or call a single tool with `run_tool`. Pin a tier with `"tool_tier"` in `.specanvil/config.json` or `SPECANVIL_TOOLS`. Set with `"tool_tier"` in `.specanvil/config.json` or `SPECANVIL_TOOLS`.
 
 ## Your profile: models per role
 
-Model choices are personal, so they live in `~/.specforge/profile.json` (never committed) and are applied to the agents' `model:` frontmatter:
+Model choices are personal, so they live in `~/.specanvil/profile.json` (never committed) and are applied to the agents' `model:` frontmatter:
 
 ```bash
-specforge profile                                   # show
-specforge profile set models.test_planner opus      # deep analysis
-specforge profile set models.test_executor haiku    # cheap execution
-specforge profile set models.reviewer sonnet        # any role: spec_analyst, architect, frontend, backend, db, qa, e2e, reviewer, backfill
-specforge profile set backfill.enabled true
-specforge profile set backfill.statuses "Done,In Review,In Progress"
+specanvil profile                                   # show
+specanvil profile set models.test_planner opus      # deep analysis
+specanvil profile set models.test_executor haiku    # cheap execution
+specanvil profile set models.reviewer sonnet        # any role: spec_analyst, architect, frontend, backend, db, qa, e2e, reviewer, backfill
+specanvil profile set backfill.enabled true
+specanvil profile set backfill.statuses "Done,In Review,In Progress"
 ```
-Values are validated (`opus`, `sonnet`, `haiku`, `fable`, `inherit`, or a full model ID). Precedence: built-in defaults < team defaults in `.specforge/config.json` (`profile_defaults`) < your profile.
+Values are validated (`opus`, `sonnet`, `haiku`, `fable`, `inherit`, or a full model ID). Precedence: built-in defaults < team defaults in `.specanvil/config.json` (`profile_defaults`) < your profile.
 
 ## Specs that can't silently rot
 
-Specs reference code as `` `path::Qualname` ``. `specforge drift` checks each reference against the index: **missing** (renamed or deleted), **changed** (code changed since the spec was verified), or **unverified**. `specforge drift --lock` records the reviewed state; `specforge init --ci` adds a GitHub Action that fails PRs which break specs.
+Specs reference code as `` `path::Qualname` ``. `specanvil drift` checks each reference against the index: **missing** (renamed or deleted), **changed** (code changed since the spec was verified), or **unverified**. `specanvil drift --lock` records the reviewed state; `specanvil init --ci` adds a GitHub Action that fails PRs which break specs.
 
 ## Privacy and security
 
-- **Local only.** Indexing, detection, drift, test analysis and reports run on your machine with no telemetry. Indexing never touches the network (a test blocks sockets to prove it). The one network step is fetching tree-sitter grammars, done explicitly by `specforge grammars` or by `init` (skip with `--offline`; uncached languages then use the built-in regex extractor).
+- **Local only.** Indexing, detection, drift, test analysis and reports run on your machine with no telemetry. Indexing never touches the network (a test blocks sockets to prove it). The one network step is fetching tree-sitter grammars, done explicitly by `specanvil grammars` or by `init` (skip with `--offline`; uncached languages then use the built-in regex extractor).
 - **Enforced, not just instructed.** Hooks block the agent from reading secret files in Claude Code, Cursor and GitHub Copilot; unit-test commands are restricted to recognised test runners and never run through a shell; unit-test "done" is verified by running the tests; plans are schema-checked. See the enforcement table in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Your code only goes where it already goes**: to the model your Claude Code account uses, and only the snippets the agent asks for.
 - **Secrets are never indexed** (`.env*`, keys, keystores, credential files, tfstate…) and secret-looking values (private keys, cloud and API tokens, passwords, credentials in URLs) are **redacted** from tool output.
@@ -192,39 +194,39 @@ Requires Python 3.10+. Node 18+ (`npx`) and `uv` (`uvx`) are needed only for the
 
 ```bash
 pipx install git+https://github.com/Abdulwahab26/Specforge      # or: uv tool install git+https://github.com/Abdulwahab26/Specforge
-# The PyPI name is `specforge-ai` ("specforge" on PyPI is an unrelated project, so do not `pip install specforge`).
-specforge doctor
+# Once published to PyPI: pipx install specanvil
+specanvil doctor
 ```
 
-`specforge-mcp` must be on your `PATH` so Claude Code can start it from `.mcp.json`.
+`specanvil-mcp` must be on your `PATH` so Claude Code can start it from `.mcp.json`.
 
 ## CLI
 
 ```
-specforge init [path] [--agents auto|all|cursor,copilot,...] [--dry-run] [--offline] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
-specforge agents list | add <tools> | all     # AI coding tools to set up
-specforge uninstall [tools] [--dry-run] [--purge]   # remove SpecForge's files for some or all tools; specs are kept
-specforge openspec status | check [target] | coverage [target] | gaps
-specforge tool <name> '<json args>' | --list  # any MCP tool from the shell (for tools without local MCP)
-specforge profile [set|unset|sync] ...   # your models per role and backfill settings
-specforge tests surface|validate|status <module>
-specforge grammars [--list]              # explicit, one-time grammar download
-specforge docs plan|status|check [--strict]|facts <id>
-specforge analyze importance|dead|cycles|coupling|layers|risk|hotspots|ast [--preset X]
-specforge embed [--code-model]          # optional local embeddings (pip install 'specforge-ai[semantic]')
-specforge source add|list|remove pkg:react | gh:owner/repo[@ref] | path:../svc
-specforge watch [--embed]
-specforge pack list | add <name|npm:x|pypi:x|go:x|gh:o/r>[@ver] | export <source> -o x.sfpack | import x.sfpack
-specforge insight health|untested|similar|complexity|extract|entry|chains|tectonic|architecture|decorators|flow|
+specanvil init [path] [--agents auto|all|cursor,copilot,...] [--dry-run] [--offline] [--tickets jira] [--db postgres,mongodb] [--app-url URL] [--ci] [--force]
+specanvil agents list | add <tools> | all     # AI coding tools to set up
+specanvil uninstall [tools] [--dry-run] [--purge]   # remove SpecAnvil's files for some or all tools; specs are kept
+specanvil openspec status | check [target] | coverage [target] | gaps
+specanvil tool <name> '<json args>' | --list  # any MCP tool from the shell (for tools without local MCP)
+specanvil profile [set|unset|sync] ...   # your models per role and backfill settings
+specanvil tests surface|validate|status <module>
+specanvil grammars [--list]              # explicit, one-time grammar download
+specanvil docs plan|status|check [--strict]|facts <id>
+specanvil analyze importance|dead|cycles|coupling|layers|risk|hotspots|ast [--preset X]
+specanvil embed [--code-model]          # optional local embeddings (pip install 'specanvil[semantic]')
+specanvil source add|list|remove pkg:react | gh:owner/repo[@ref] | path:../svc
+specanvil watch [--embed]
+specanvil pack list | add <name|npm:x|pypi:x|go:x|gh:o/r>[@ver] | export <source> -o x.sfpack | import x.sfpack
+specanvil insight health|untested|similar|complexity|extract|entry|chains|tectonic|architecture|decorators|flow|
                   columns|safety|endpoint|risk-file|provenance|diff|digest|delivery|churn|audit [target]
-specforge insight trace-import <otel.json[.gz]> | hot | unused | corrections [--apply] | tune [eval.json] [--apply] | contracts
-specforge diagram call|class|deps|modules|sequence|tectonic [target] [-o diagram.html|.md]
-specforge connect                 # list the connector catalog
-specforge connect jira figma      # add connectors to .mcp.json  (--remove to drop)
-specforge index [--full] | detect | stats | drift [--lock] [--strict] | report | doctor | serve
+specanvil insight trace-import <otel.json[.gz]> | hot | unused | corrections [--apply] | tune [eval.json] [--apply] | contracts
+specanvil diagram call|class|deps|modules|sequence|tectonic [target] [-o diagram.html|.md]
+specanvil connect                 # list the connector catalog
+specanvil connect jira figma      # add connectors to .mcp.json  (--remove to drop)
+specanvil index [--full] | detect | stats | drift [--lock] [--strict] | report | doctor | serve
 ```
 
-Connectors: `playwright`, `github`, `jira`, `atlassian-remote`, `azure-devops`, `linear`, `gitlab`, `postgres`, `mysql`, `sqlserver`, `sqlite`, `mongodb`, `figma`, `sentry`, `context7`. The catalog lives in `src/specforge/assets/connectors/catalog.json`; check package names and URLs against each vendor's current docs before rolling out to a team.
+Connectors: `playwright`, `github`, `jira`, `atlassian-remote`, `azure-devops`, `linear`, `gitlab`, `postgres`, `mysql`, `sqlserver`, `sqlite`, `mongodb`, `figma`, `sentry`, `context7`. The catalog lives in `src/specanvil/assets/connectors/catalog.json`; check package names and URLs against each vendor's current docs before rolling out to a team.
 
 ## Architecture
 
@@ -237,7 +239,7 @@ flowchart LR
   I --> B[bootstrap]
   D --> B
   B --> O[specs/ · .claude/ · CLAUDE.md · .mcp.json]
-  I --> M[specforge-mcp]
+  I --> M[specanvil-mcp]
   M <--> C[Claude Code + agent team]
   C <--> X[Ticket / DB / Playwright / Figma MCPs]
   H[PostToolUse hook] --> I

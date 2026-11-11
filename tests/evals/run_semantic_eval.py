@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from specforge.index import CodeIndex
+from specanvil.index import CodeIndex
 
 
 def run(repo: str, dataset: str) -> dict:
@@ -16,7 +16,7 @@ def run(repo: str, dataset: str) -> dict:
     modes = {"lexical": lambda q: ix.search(q, limit=data["k"]),
              "hybrid": lambda q: ix.hybrid_search(q, limit=data["k"])}
     try:
-        from specforge import semantic
+        from specanvil import semantic
         if semantic.has_vectors(ix):
             modes["semantic"] = lambda q: semantic.search(ix, q, limit=data["k"])
             modes["hybrid+vectors"] = lambda q: ix.hybrid_search(q, limit=data["k"], vector_hits=semantic.search(ix, q, 60))

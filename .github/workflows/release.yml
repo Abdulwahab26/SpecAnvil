@@ -23,8 +23,8 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           awk "/^## ${VER}\$/{f=1;next} /^## /{f=0} f" CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* --title "SpecForge $VER" --notes-file notes.md
-      # Publishes to PyPI as "specforge-ai" via trusted publishing (no token). Runs only after you:
+          gh release create "$GITHUB_REF_NAME" dist/* --title "SpecAnvil $VER" --notes-file notes.md
+      # Publishes to PyPI as "specanvil" via trusted publishing (no token). Runs only after you:
       #   1. add this repo + workflow "release.yml" as a trusted publisher at pypi.org (Publishing settings), and
       #   2. set the repository variable PYPI_PUBLISH=true (Settings > Secrets and variables > Actions > Variables).
       - name: Publish to PyPI

@@ -1,7 +1,7 @@
 """How accurate is the static call graph? Ground truth from execution.
 
 Runs this repo's own unit tests under a profiler, recording every real (caller -> callee) pair between functions
-in src/specforge, then compares with the static graph built by the index:
+in src/specanvil, then compares with the static graph built by the index:
 
   call-graph recall   = executed call pairs that the static graph also has
   dead-code precision = symbols reported dead that were, in fact, never executed (lower bound: unexecuted code
@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = str(ROOT / "src" / "specforge")
+SRC = str(ROOT / "src" / "specanvil")
 PAIRS: set[tuple] = set()
 EXECUTED: set[tuple] = set()
 
@@ -33,7 +33,7 @@ def _profile(frame, event, arg):  # noqa: ARG001
         return
     EXECUTED.add(_key(code))
     back = frame.f_back
-    # attribute the call to the nearest caller frame inside src/specforge (skip functools wrappers etc.)
+    # attribute the call to the nearest caller frame inside src/specanvil (skip functools wrappers etc.)
     hops = 0
     while back is not None and hops < 3 and not back.f_code.co_filename.startswith(SRC):
         back = back.f_back
@@ -54,13 +54,13 @@ def main(argv: list[str]) -> int:
         print("unit tests failed; no measurement")
         return 1
 
-    from specforge.graph import CodeGraph, dead_code
-    from specforge.index import CodeIndex
+    from specanvil.graph import CodeGraph, dead_code
+    from specanvil.index import CodeIndex
     ix = CodeIndex(ROOT)
     ix.build()
     funcs = [dict(r) for r in ix.db.execute(
         "SELECT id, path, qualname, start_line, end_line FROM symbols WHERE kind IN ('function','method') "
-        "AND path LIKE 'src/specforge/%'")]
+        "AND path LIKE 'src/specanvil/%'")]
     by_file: dict[str, list[dict]] = {}
     for f in funcs:
         by_file.setdefault(str(ROOT / f["path"]), []).append(f)
@@ -80,11 +80,11 @@ def main(argv: list[str]) -> int:
     recall = len(hit) / len(dyn) if dyn else 0.0
     executed_ids = {s for s in (sym(k) for k in EXECUTED) if s}
     static_src = {(a, b) for a, b in static if a in g.sym and b in g.sym
-                  and g.sym[a]["path"].startswith("src/specforge/") and g.sym[b]["path"].startswith("src/specforge/")}
+                  and g.sym[a]["path"].startswith("src/specanvil/") and g.sym[b]["path"].startswith("src/specanvil/")}
     both_ran = {(a, b) for a, b in static_src if a in executed_ids and b in executed_ids}
     confirmed = len(both_ran & dyn) / len(both_ran) if both_ran else 0.0
     dead = [d for d in dead_code(ix, limit=10_000, include_exported=True)
-            if d.get("ref", "").startswith("src/specforge/") and d.get("kind") in ("function", "method")]
+            if d.get("ref", "").startswith("src/specanvil/") and d.get("kind") in ("function", "method")]
     dead_ids = {d["id"] for d in dead}
     wrong = dead_ids & executed_ids
     name = {f["id"]: f"{f['path']}::{f['qualname']}" for f in funcs}

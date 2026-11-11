@@ -27,7 +27,7 @@ CALLS = [
 
 
 async def main(root: str) -> int:
-    p = StdioServerParameters(command="specforge-mcp", cwd=root, env={**os.environ, "SPECFORGE_TOOLS": "full"})
+    p = StdioServerParameters(command="specanvil-mcp", cwd=root, env={**os.environ, "SPECANVIL_TOOLS": "full"})
     bad = 0
     async with stdio_client(p) as (r, w):
         async with ClientSession(r, w) as s:

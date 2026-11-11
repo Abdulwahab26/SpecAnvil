@@ -14,9 +14,9 @@ def test_every_mcp_tool_runs_without_crashing(tmp_path, monkeypatch):
     any other exception is a bug."""
     import inspect
 
-    from specforge.bootstrap import run
-    from specforge.server import ToolError
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil.bootstrap import run
+    from specanvil.server import ToolError
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     root = _openspec_repo(tmp_path)
     run(root, agents="claude", offline=True)
     server = _server_on(root, monkeypatch)
@@ -61,8 +61,8 @@ def test_every_mcp_tool_runs_without_crashing(tmp_path, monkeypatch):
 
 
 def test_every_cli_command_runs(tmp_path, monkeypatch, capsys):
-    from specforge.cli import main
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil.cli import main
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     root = _openspec_repo(tmp_path)
     r = str(root)
     assert main(["init", r, "--offline", "--agents", "claude,cursor"]) == 0

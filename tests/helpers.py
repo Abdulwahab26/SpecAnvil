@@ -94,7 +94,7 @@ def _otlp(path: Path, spans: list[tuple[dict, float]]) -> None:
 
 
 def I_file_risk(ix, path):
-    from specforge import insights as I
+    from specanvil import insights as I
     return I.file_risk(ix, path)["symbols"]
 
 
@@ -132,8 +132,8 @@ def _openspec_repo(tmp: Path) -> Path:
 
 
 def _server_on(root: Path, monkeypatch):
-    from specforge import server
-    from specforge.session import Session
+    from specanvil import server
+    from specanvil.session import Session
     monkeypatch.setattr(server, "ROOT", root)
     monkeypatch.setattr(server, "_ix", None)
     monkeypatch.setattr(server, "_session", Session(root))

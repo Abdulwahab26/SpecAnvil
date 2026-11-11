@@ -9,7 +9,7 @@ import re
 import sys
 from pathlib import Path
 
-from specforge.index import CodeIndex
+from specanvil.index import CodeIndex
 
 
 def main(repo: str, dataset: str) -> int:

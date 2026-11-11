@@ -1,9 +1,9 @@
-# Contributing to SpecForge
+# Contributing to SpecAnvil
 
 ## Setup
 ```bash
 pip install -e ".[semantic]" pytest
-specforge grammars python javascript typescript tsx java go --path .
+specanvil grammars python javascript typescript tsx java go --path .
 pytest -q
 ```
 

@@ -6,11 +6,11 @@ from helpers import (
     _tool_repo,
 )
 
-from specforge.index import CodeIndex
+from specanvil.index import CodeIndex
 
 
 def test_openspec_status_check_coverage_gaps(tmp_path):
-    from specforge import openspec as O
+    from specanvil import openspec as O
     root = _openspec_repo(tmp_path)
     ix = CodeIndex(root)
     ix.build()
@@ -31,13 +31,13 @@ def test_openspec_status_check_coverage_gaps(tmp_path):
 
 
 def test_openspec_mode_init_does_not_create_a_second_spec_system(tmp_path, monkeypatch):
-    from specforge.bootstrap import run
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil.bootstrap import run
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     root = _openspec_repo(tmp_path)
     before = {p: p.read_bytes() for p in (root / "openspec").rglob("*.md")}
     res = run(root, agents="claude,cursor", offline=True)
     cfg = res["config"]
-    assert cfg["spec_system"] == "openspec" and cfg["features_dir"] == "openspec/changes" and cfg["specs_dir"] == "openspec/specforge"
+    assert cfg["spec_system"] == "openspec" and cfg["features_dir"] == "openspec/changes" and cfg["specs_dir"] == "openspec/specanvil"
     assert not (root / "specs").exists()
     assert all(p.read_bytes() == b for p, b in before.items())      # OpenSpec's own files are untouched
     groom = (root / ".claude/commands/sf/groom.md").read_text(encoding="utf-8")
@@ -45,8 +45,8 @@ def test_openspec_mode_init_does_not_create_a_second_spec_system(tmp_path, monke
     assert (root / ".claude/commands/sf/baseline.md").exists() and (root / ".cursor/commands/sf-baseline.md").exists()
     assert "This repo uses OpenSpec" in (root / ".cursor/commands/sf-groom.md").read_text(encoding="utf-8")
     assert "### OpenSpec" in (root / "CLAUDE.md").read_text(encoding="utf-8")
-    assert not (root / "openspec/specforge/templates/requirements.md").exists()
-    from specforge.specs import drift, list_specs
+    assert not (root / "openspec/specanvil/templates/requirements.md").exists()
+    from specanvil.specs import drift, list_specs
     paths = {s["path"] for s in list_specs(root)}
     assert "openspec/specs/signup/spec.md" in paths and "openspec/changes/add-email-check/proposal.md" in paths
     d = drift(root, CodeIndex(root))
@@ -54,18 +54,18 @@ def test_openspec_mode_init_does_not_create_a_second_spec_system(tmp_path, monke
 
 
 def test_uninstall_round_trip_keeps_user_content(tmp_path, monkeypatch):
-    from specforge.bootstrap import run
-    from specforge.uninstall import uninstall
-    monkeypatch.setenv("SPECFORGE_HOME", str(tmp_path / "home"))
+    from specanvil.bootstrap import run
+    from specanvil.uninstall import uninstall
+    monkeypatch.setenv("SPECANVIL_HOME", str(tmp_path / "home"))
     root = _tool_repo(tmp_path)
     (root / "AGENTS.md").write_text("# Team\n\nOur notes.\n", encoding="utf-8")
     (root / ".cursor").mkdir()
     (root / ".cursor" / "mcp.json").write_text('{"mcpServers": {"mine": {"command": "x"}}}', encoding="utf-8")
     (root / ".cursor" / "hooks.json").write_text('{"version": 1, "hooks": {"afterFileEdit": [{"command": "fmt.sh"}]}}', encoding="utf-8")
     run(root, agents="claude,cursor,copilot,codex", offline=True)
-    assert (root / ".github/hooks/specforge.json").exists()
+    assert (root / ".github/hooks/specanvil.json").exists()
     hooks = json.loads((root / ".cursor/hooks.json").read_text(encoding="utf-8"))["hooks"]
-    assert {"command": "specforge hook guard"} in hooks["beforeReadFile"] and {"command": "fmt.sh"} in hooks["afterFileEdit"]
+    assert {"command": "specanvil hook guard"} in hooks["beforeReadFile"] and {"command": "fmt.sh"} in hooks["afterFileEdit"]
     dry = uninstall(root, ["cursor"], dry_run=True)
     assert dry["dry_run"] and (root / ".cursor/commands/sf-groom.md").exists()
     res = uninstall(root, ["cursor", "copilot"])
@@ -73,7 +73,7 @@ def test_uninstall_round_trip_keeps_user_content(tmp_path, monkeypatch):
     assert not (root / ".cursor/commands").exists() and not (root / ".github/prompts").exists()
     assert json.loads((root / ".cursor/mcp.json").read_text(encoding="utf-8")) == {"mcpServers": {"mine": {"command": "x"}}}
     assert json.loads((root / ".cursor/hooks.json").read_text(encoding="utf-8"))["hooks"] == {"afterFileEdit": [{"command": "fmt.sh"}]}
-    assert "specforge:start" in (root / "AGENTS.md").read_text(encoding="utf-8")   # Codex still needs it
+    assert "specanvil:start" in (root / "AGENTS.md").read_text(encoding="utf-8")   # Codex still needs it
     assert (root / ".claude/commands/sf/groom.md").exists()
     uninstall(root)
     assert (root / "AGENTS.md").read_text(encoding="utf-8") == "# Team\n\nOur notes.\n"
@@ -82,7 +82,7 @@ def test_uninstall_round_trip_keeps_user_content(tmp_path, monkeypatch):
 
 
 def test_guard_speaks_claude_cursor_and_copilot():
-    from specforge.cli import _guard_hit
+    from specanvil.cli import _guard_hit
     assert _guard_hit({"tool_name": "Read", "tool_input": {"file_path": ".env"}}) == (".env", "claude")
     assert _guard_hit({"hook_event_name": "beforeReadFile", "file_path": "/r/.env.production"})[1] == "cursor"
     assert _guard_hit({"hook_event_name": "beforeShellExecution", "command": "cat secrets.json"})[0] == "secrets.json"

@@ -1,4 +1,4 @@
-"""End-to-end smoke test: start specforge-mcp over stdio like Claude Code does and call every tool."""
+"""End-to-end smoke test: start specanvil-mcp over stdio like Claude Code does and call every tool."""
 import asyncio
 import json
 import os
@@ -28,7 +28,7 @@ CALLS = [
 
 
 async def main():
-    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=ROOT, env={**os.environ, "SPECFORGE_TOOLS": "full"})
+    params = StdioServerParameters(command="specanvil-mcp", args=[], cwd=ROOT, env={**os.environ, "SPECANVIL_TOOLS": "full"})
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()

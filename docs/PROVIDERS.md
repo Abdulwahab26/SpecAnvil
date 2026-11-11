@@ -1,14 +1,14 @@
-# SpecForge in any AI coding tool
+# SpecAnvil in any AI coding tool
 
-SpecForge isn't tied to Claude Code. `specforge init` detects which AI coding tools a repo already uses and writes the same setup (rules, lifecycle workflows, role agents, skills, MCP connection) in each tool's own formats. The code index, the specs and the server-side guarantees (secret filtering, redaction, session dedupe, tool tiers) are identical everywhere.
+SpecAnvil isn't tied to Claude Code. `specanvil init` detects which AI coding tools a repo already uses and writes the same setup (rules, lifecycle workflows, role agents, skills, MCP connection) in each tool's own formats. The code index, the specs and the server-side guarantees (secret filtering, redaction, session dedupe, tool tiers) are identical everywhere.
 
 ```bash
-specforge init                      # auto: tools detected from their config folders (Claude Code if none)
-specforge init --agents cursor,copilot
-specforge init --agents all
-specforge agents list               # supported / detected / configured
-specforge agents add kiro           # add a tool later; earlier choices are kept
-specforge uninstall cursor          # remove one tool's files (or all with no argument); your specs and own config stay
+specanvil init                      # auto: tools detected from their config folders (Claude Code if none)
+specanvil init --agents cursor,copilot
+specanvil init --agents all
+specanvil agents list               # supported / detected / configured
+specanvil agents add kiro           # add a tool later; earlier choices are kept
+specanvil uninstall cursor          # remove one tool's files (or all with no argument); your specs and own config stay
 ```
 
 ## What each tool gets
@@ -16,28 +16,28 @@ specforge uninstall cursor          # remove one tool's files (or all with no ar
 | Tool | Always-on rules | Workflows (`groom`, `design`, … `flow`) | Role agents | Skills | MCP |
 |---|---|---|---|---|---|
 | Claude Code | `CLAUDE.md` | `.claude/commands/sf/*.md` → `/sf:groom` | `.claude/agents/*.md` (model per role) | `.claude/skills/` | `.mcp.json` |
-| GitHub Copilot (VS Code) | `AGENTS.md` + pointer in `.github/copilot-instructions.md` | `.github/prompts/sf-*.prompt.md` → `/sf-groom` | `.github/agents/sf-*.agent.md` (tools `specforge/*`; optional model) | `.github/skills/` | `.vscode/mcp.json` (`servers`, `${workspaceFolder}`) |
+| GitHub Copilot (VS Code) | `AGENTS.md` + pointer in `.github/copilot-instructions.md` | `.github/prompts/sf-*.prompt.md` → `/sf-groom` | `.github/agents/sf-*.agent.md` (tools `specanvil/*`; optional model) | `.github/skills/` | `.vscode/mcp.json` (`servers`, `${workspaceFolder}`) |
 | Cursor | `AGENTS.md` | `.cursor/commands/sf-*.md` → `/sf-groom` | role text inside each workflow | `.cursor/rules/*.mdc` (agent-requested) | `.cursor/mcp.json` |
-| Augment Code | `AGENTS.md` | `.augment/commands/sf/*.md` → `/sf:groom` (`$ARGUMENTS`) | role text inside each workflow | `.augment/skills/` | `.specforge/mcp/augment-import.json` → Settings › MCP › Import from JSON |
-| Windsurf / Devin Local | `AGENTS.md` | Agent Skills `.agents/skills/sf-*` | role text inside each workflow | `.agents/skills/` | `.devin/mcp_config.json` (specforge server) |
+| Augment Code | `AGENTS.md` | `.augment/commands/sf/*.md` → `/sf:groom` (`$ARGUMENTS`) | role text inside each workflow | `.augment/skills/` | `.specanvil/mcp/augment-import.json` → Settings › MCP › Import from JSON |
+| Windsurf / Devin Local | `AGENTS.md` | Agent Skills `.agents/skills/sf-*` | role text inside each workflow | `.agents/skills/` | `.devin/mcp_config.json` (specanvil server) |
 | OpenAI Codex | `AGENTS.md` | Agent Skills `.agents/skills/sf-*` | `.codex/agents/sf-*.toml` (optional model) | `.agents/skills/` | `.codex/config.toml` (trusted projects) |
 | Kiro | `AGENTS.md` + `.kiro/steering/{product,tech,structure}.md` | `.kiro/steering/sf-*.md` (manual) → `#sf-groom` | role text inside each workflow | steering files (`inclusion: auto`) | `.kiro/settings/mcp.json` |
 | Gemini CLI | `GEMINI.md` | `.gemini/commands/sf/*.toml` → `/sf:groom` (`{{args}}`) | role text inside each workflow | `.agents/skills/` | `.gemini/settings.json` |
-| Replit Agent | `replit.md` | `.specforge/playbooks/*.md` | role text inside each workflow | `.specforge/playbooks/skills/` | none locally: `specforge tool <name> '<json>'` from the shell |
+| Replit Agent | `replit.md` | `.specanvil/playbooks/*.md` | role text inside each workflow | `.specanvil/playbooks/skills/` | none locally: `specanvil tool <name> '<json>'` from the shell |
 
 **Specs per tool.** Specs live in `specs/` for every tool. When Kiro is in use, feature specs go in Kiro's own layout, `.kiro/specs/<feature>/` (requirements, design, tasks), so they show up in Kiro's spec view; templates move to `specs/templates/`. Drift checks, `list_specs` and `read_spec` cover both folders.
 
-**Models per role.** Claude Code agents get `model:` from your profile as before. Copilot, Augment and Codex accept a model per agent or command in their own naming, set with `specforge profile set providers.copilot.models.architect "Claude Opus 4.5"`. Without that, those tools use the model picked in the tool. Other tools have no per-agent model setting.
+**Models per role.** Claude Code agents get `model:` from your profile as before. Copilot, Augment and Codex accept a model per agent or command in their own naming, set with `specanvil profile set providers.copilot.models.architect "Claude Opus 4.5"`. Without that, those tools use the model picked in the tool. Other tools have no per-agent model setting.
 
-**MCP root.** The server finds the project on its own: `SPECFORGE_ROOT`, the client's project variable, then the nearest folder above its working directory with `.specforge/` or `.git`. Values a client leaves unexpanded (a literal `${workspaceFolder}`) are ignored. Tested by launching the server from a subfolder, with an unexpanded variable, and with an expanded one.
+**MCP root.** The server finds the project on its own: `SPECANVIL_ROOT`, the client's project variable, then the nearest folder above its working directory with `.specanvil/` or `.git`. Values a client leaves unexpanded (a literal `${workspaceFolder}`) are ignored. Tested by launching the server from a subfolder, with an unexpanded variable, and with an expanded one.
 
-**Tools without local MCP (Replit).** `specforge tool <name> '<json args>'` runs any SpecForge tool from the shell, so the agent still reads one function instead of whole files. `specforge tool --list` shows them all.
+**Tools without local MCP (Replit).** `specanvil tool <name> '<json args>'` runs any SpecAnvil tool from the shell, so the agent still reads one function instead of whole files. `specanvil tool --list` shows them all.
 
 ## Limits by tool
 
-- **Programmatic guard rails differ.** The secret-file guard runs as a hook in Claude Code (`.claude/settings.json`), Cursor (`.cursor/hooks.json`: `beforeReadFile`, `beforeShellExecution`, plus re-index on `afterFileEdit`) and GitHub Copilot (`.github/hooks/specforge.json`: `preToolUse`), each answering in that tool's own protocol. The other tools document no hook system, so there secrets are still never indexed and are redacted from every tool result, and the index refreshes itself every 20 seconds, but the tool's own file reader isn't blocked from opening a secret file.
+- **Programmatic guard rails differ.** The secret-file guard runs as a hook in Claude Code (`.claude/settings.json`), Cursor (`.cursor/hooks.json`: `beforeReadFile`, `beforeShellExecution`, plus re-index on `afterFileEdit`) and GitHub Copilot (`.github/hooks/specanvil.json`: `preToolUse`), each answering in that tool's own protocol. The other tools document no hook system, so there secrets are still never indexed and are redacted from every tool result, and the index refreshes itself every 20 seconds, but the tool's own file reader isn't blocked from opening a secret file.
 - **Sub-agents.** `/flow` hands steps to role agents in Claude Code, Copilot and Codex. In the other tools the workflow tells the agent to run the steps itself, in order, stopping at each gate.
-- **Connector servers.** Ticket and database MCP servers are written for Claude Code, Copilot, Cursor, Kiro and Gemini with each tool's env-var syntax. Windsurf and Codex get the SpecForge server only (their env syntax for project files isn't documented); add connectors in those tools' MCP settings. Augment has no project-level MCP file, so it gets an import file.
+- **Connector servers.** Ticket and database MCP servers are written for Claude Code, Copilot, Cursor, Kiro and Gemini with each tool's env-var syntax. Windsurf and Codex get the SpecAnvil server only (their env syntax for project files isn't documented); add connectors in those tools' MCP settings. Augment has no project-level MCP file, so it gets an import file.
 - **Formats change.** These tools ship new formats often. They were checked against each tool's documentation on 2026-11-11.
 
 ## Sources
@@ -55,10 +55,10 @@ specforge uninstall cursor          # remove one tool's files (or all with no ar
 
 Every generated file is checked for valid syntax and against each tool's documentation, and the MCP server is tested as those tools launch it. What has not been done is opening each setup inside the actual app. Before rolling out to a team, run this once per tool you use:
 
-1. `specforge init --agents <tool>` in a test repo, then open the repo in the tool.
-2. The SpecForge MCP server shows as connected and `search_symbols` returns results.
+1. `specanvil init --agents <tool>` in a test repo, then open the repo in the tool.
+2. The SpecAnvil MCP server shows as connected and `search_symbols` returns results.
 3. The `groom` workflow appears where the table above says (slash command, skill or steering file) and runs.
 4. The always-on rules are loaded (ask the agent which workflow commands exist).
 5. Where hooks are supported, asking the agent to read `.env` is refused.
-6. `specforge uninstall <tool>` leaves your own files as they were.
+6. `specanvil uninstall <tool>` leaves your own files as they were.
 

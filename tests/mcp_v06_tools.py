@@ -38,8 +38,8 @@ def otlp_trace(path: str) -> None:
 
 
 async def main(root: str) -> int:
-    env = {k: v for k, v in os.environ.items() if k != "SPECFORGE_TOOLS"}
-    p = StdioServerParameters(command="specforge-mcp", cwd=root, env=env)
+    env = {k: v for k, v in os.environ.items() if k != "SPECANVIL_TOOLS"}
+    p = StdioServerParameters(command="specanvil-mcp", cwd=root, env=env)
     bad = 0
     changed = []
 

@@ -1,6 +1,6 @@
-# SpecForge architecture
+# SpecAnvil architecture
 
-SpecForge is a deterministic local toolchain (Python) plus a set of Claude Code assets (agents, commands, skills, hooks, MCP config) generated per repository. The core design rule: **anything that can be decided by code is enforced by code; the model is used only for judgement.**
+SpecAnvil is a deterministic local toolchain (Python) plus a set of Claude Code assets (agents, commands, skills, hooks, MCP config) generated per repository. The core design rule: **anything that can be decided by code is enforced by code; the model is used only for judgement.**
 
 ```mermaid
 flowchart TB
@@ -9,8 +9,8 @@ flowchart TB
     PA --> IX[(SQLite WAL<br/>symbols · FTS5 prefix · imports · ledger)]
     DT[detect<br/>stack · DBs · tickets · conventions] --> BS[bootstrap]
     IX --> BS
-    PR[(~/.specforge/profile.json<br/>models per role · backfill prefs)] --> BS
-    IX --> MCP[specforge-mcp<br/>43 tools · 4 tiers]
+    PR[(~/.specanvil/profile.json<br/>models per role · backfill prefs)] --> BS
+    IX --> MCP[specanvil-mcp<br/>43 tools · 4 tiers]
     GR[graph<br/>calls · bases · imports] --> MCP
     SEM[(local embeddings<br/>optional)] --> MCP
     SRC[sources<br/>deps · GitHub · folders] --> MCP
@@ -42,15 +42,15 @@ flowchart TB
 
 | Rule | Enforced by |
 |---|---|
-| Never read or write secret files | `PreToolUse` hook (`specforge hook guard`, exit 2 blocks the call) + scanner never indexes them + output redaction |
+| Never read or write secret files | `PreToolUse` hook (`specanvil hook guard`, exit 2 blocks the call) + scanner never indexes them + output redaction |
 | A unit-test milestone is only "done" when its tests pass | `update_test_milestone` runs the tests itself and refuses otherwise |
 | "blocked" must carry a reason for the planner | tool validation error |
 | Test plans are well-formed and reference real code | `validate_plan` (schema + index lookup), also in the CLI for CI |
 | Executor may not touch production code or edit the plan | `tools:` allow-list on the executor agent; status changes only via the tool |
-| Specs don't silently diverge from code | `spec_drift` + `specforge drift --strict` in CI |
+| Specs don't silently diverge from code | `spec_drift` + `specanvil drift --strict` in CI |
 | Indexing never uses the network | grammar policy in `parser.py` + socket-blocking test |
 | Never pay twice for the same code in a session | server-side delivery ledger; PreCompact hook resets it |
-| Every required document exists, has its sections and covers every endpoint/function/setting | `doc_check` / `specforge docs check --strict`; `doc_register` refuses incomplete docs |
+| Every required document exists, has its sections and covers every endpoint/function/setting | `doc_check` / `specanvil docs check --strict`; `doc_register` refuses incomplete docs |
 | Docs don't silently go out of date | facts hash per document; status flips to stale when the code changes |
 | Dead code is only reported when no occurrence exists | graph prefilter + batched word search over all code before reporting |
 | Semantic search never phones home after setup | model loads with `local_files_only` + `HF_HUB_OFFLINE`; remote embedding endpoints refused unless allowed |
@@ -70,7 +70,7 @@ Prompts still carry intent and judgement (how to design a test, how to word an A
 
 ### ADR-2: tree-sitter with a regex fallback, and grammars never fetched during indexing
 **Context.** "Works on any repo" and "indexing is local" pull in opposite directions: 300+ grammars cannot all be bundled.
-**Decision.** Parse with tree-sitter for grammars already in the local cache; fetch missing grammars only in an explicit step (`specforge grammars`, run by `init` unless `--offline`), then re-parse. Uncached languages use a pure-Python regex extractor. Only programming languages are parsed; docs and data are indexed as text.
+**Decision.** Parse with tree-sitter for grammars already in the local cache; fetch missing grammars only in an explicit step (`specanvil grammars`, run by `init` unless `--offline`), then re-parse. Uncached languages use a pure-Python regex extractor. Only programming languages are parsed; docs and data are indexed as text.
 **Why.** Indexing is provably offline (tested with sockets blocked); the one network action is visible and opt-out.
 **Trade-off.** Regex extraction is less precise (end lines are inferred). Measured fallback quality is acceptable for navigation; precision returns once grammars are fetched.
 
@@ -86,9 +86,9 @@ Prompts still carry intent and judgement (how to design a test, how to word an A
 **Trade-off.** Planning is front-loaded; if code changes mid-execution, targets can go stale (caught by `validate_test_plan`).
 
 ### ADR-5: User profile outside the repo
-**Decision.** Personal choices live in `~/.specforge/profile.json` (precedence: defaults < project `profile_defaults` < user). `specforge profile set` validates values and re-renders agent frontmatter in the current repo.
-**Why.** Model choice depends on the person's plan and budget, not the codebase; it should follow them across repos and never be committed. Teams can still ship defaults in `.specforge/config.json`.
-**Trade-off.** Agent files in `.claude/agents/` reflect whoever last synced. If the team commits `.claude/`, each developer runs `specforge profile sync` after pulling (idempotent, only rewrites changed files).
+**Decision.** Personal choices live in `~/.specanvil/profile.json` (precedence: defaults < project `profile_defaults` < user). `specanvil profile set` validates values and re-renders agent frontmatter in the current repo.
+**Why.** Model choice depends on the person's plan and budget, not the codebase; it should follow them across repos and never be committed. Teams can still ship defaults in `.specanvil/config.json`.
+**Trade-off.** Agent files in `.claude/agents/` reflect whoever last synced. If the team commits `.claude/`, each developer runs `specanvil profile sync` after pulling (idempotent, only rewrites changed files).
 
 ### ADR-6: Ticket backfill is opt-in, read-only and resumable
 **Decision.** `/sf:backfill` refuses to start until `backfill.enabled` is true in the profile, never writes to the ticket system, records progress after each batch (`backfill_progress`), skips tickets that already have specs, and links each ticket to code through local git archaeology (`ticket_trace`: commits mentioning the key → changed files → current symbols via hunk headers and changed identifiers).
@@ -100,11 +100,11 @@ Prompts still carry intent and judgement (how to design a test, how to word an A
 **Why.** Small, predictable outputs keep agent context lean; actionable errors let the model self-correct without a human.
 
 ### ADR-8: Secrets defence in depth
-Layers: never indexed (scanner), redacted in any returned text (tokens.redact), blocked at tool level (PreToolUse guard, overridable per session with `SPECFORGE_ALLOW_SECRETS=1`), never written to configs (`${ENV}` references), DB connectors read-only by default. The guard fails open if SpecForge isn't installed, so it never bricks a session; the other layers still apply.
+Layers: never indexed (scanner), redacted in any returned text (tokens.redact), blocked at tool level (PreToolUse guard, overridable per session with `SPECANVIL_ALLOW_SECRETS=1`), never written to configs (`${ENV}` references), DB connectors read-only by default. The guard fails open if SpecAnvil isn't installed, so it never bricks a session; the other layers still apply.
 
 ### ADR-9: Documentation from extracted facts, gated by code
 **Context.** "Write all the docs" fails two ways: the model invents things, or it silently skips items (one endpoint, one function, one setting).
-**Decision.** A data-driven catalog maps repo archetypes to required documents and sections. Facts are extracted locally (regex over the index, with file:line) and handed to a `doc-writer` subagent on the user's chosen model. `doc_check` enforces required sections, mentions of every coverage item, no placeholders outside "Open questions", and working links. `doc_register` refuses incomplete documents and stores a hash of the facts, so a document turns *stale* as soon as the code it describes changes. Teams extend the catalog in `.specforge/docs-catalog.json`.
+**Decision.** A data-driven catalog maps repo archetypes to required documents and sections. Facts are extracted locally (regex over the index, with file:line) and handed to a `doc-writer` subagent on the user's chosen model. `doc_check` enforces required sections, mentions of every coverage item, no placeholders outside "Open questions", and working links. `doc_register` refuses incomplete documents and stores a hash of the facts, so a document turns *stale* as soon as the code it describes changes. Teams extend the catalog in `.specanvil/docs-catalog.json`.
 **Trade-off.** Regex fact extraction covers common frameworks, not every one. Unknown patterns produce fewer facts, never wrong ones, and the catalog stays usable.
 
 ### ADR-10: Server-enforced session dedupe and large-symbol skeletons
@@ -120,11 +120,11 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Lesson recorded.** Two field regexes with `\s*` crossing newlines cost 7.5 s on Django; line-bounded `[ \t]*` fixed it (0.8 s). Extractor regexes are benchmarked per pattern.
 
 ### ADR-12: Semantic search as an optional, local, measured layer
-**Decision.** Default search stays lexical (names / signatures). A hybrid mode adds body vocabulary (no download) and, when built, local embeddings (fastembed ONNX or a localhost endpoint), fused by reciprocal rank with weights chosen on two evals. The model is fetched only by the explicit `specforge embed`; query-time loads are offline.
+**Decision.** Default search stays lexical (names / signatures). A hybrid mode adds body vocabulary (no download) and, when built, local embeddings (fastembed ONNX or a localhost endpoint), fused by reciprocal rank with weights chosen on two evals. The model is fetched only by the explicit `specanvil embed`; query-time loads are offline.
 **Why.** Mixing body vocabulary into the default ranking hurt MRR (0.88 → 0.65), so it lives in its own list. Embeddings lifted paraphrased-task context hits from 3/12 to 8/12; on the main eval recall stays 1.00 and MRR moves 0.88 → 0.85 (two tasks drop from rank 1–2 to 2–3), a trade accepted for the paraphrase gain. Vectors are stored per model and never mixed: changing the model without re-embedding disables semantic search instead of comparing incompatible vectors.
 
 ### ADR-13: Dependency packs from installed versions instead of curated packs
-**Decision.** `pkg:<name>` indexes the dependency you actually have installed (node_modules, the project virtualenv or current Python, the Go module cache), keyed by version, stored under `~/.specforge/sources`, shared by every repo. The same tools accept `source=`.
+**Decision.** `pkg:<name>` indexes the dependency you actually have installed (node_modules, the project virtualenv or current Python, the Go module cache), keyed by version, stored under `~/.specanvil/sources`, shared by every repo. The same tools accept `source=`.
 **Trade-off.** Requires the dependency to be installed, which it is in any project that uses it, and that is exactly the version the agent should read.
 
 ### ADR-14: Config keys and documentation sections are symbols, ranked below code
@@ -136,7 +136,7 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Why.** One place for telemetry and error contract (`isError` with a next step), and every analysis is unit-testable without an MCP client. A stdio test (`tests/mcp_v05_tools.py`) calls every tool against a real repo and fails on any error.
 
 ### ADR-16: Curated starter packs fetched from registries, extracted defensively
-**Decision.** A 51-entry catalog maps names to `npm:` / `pypi:` / `go:` / `gh:` specs. `specforge pack add` downloads the published archive (size-capped), rejects absolute paths, drive letters and `..` entries **before** prefix stripping, writes only under `~/.specforge/sources/packs`, and registers the result as a source. `.sfpack` files (zip of meta + sources) share packs offline; the recipient indexes locally.
+**Decision.** A 51-entry catalog maps names to `npm:` / `pypi:` / `go:` / `gh:` specs. `specanvil pack add` downloads the published archive (size-capped), rejects absolute paths, drive letters and `..` entries **before** prefix stripping, writes only under `~/.specanvil/sources/packs`, and registers the result as a source. `.sfpack` files (zip of meta + sources) share packs offline; the recipient indexes locally.
 **Why.** Complements ADR-13: reading a library you have not installed yet (evaluation, upgrades) without running its install scripts. Downloading is an explicit command, never part of indexing. A test feeds a malicious tarball and asserts nothing escapes the target folder.
 
 ### ADR-17: Retrieval quality is a CI gate
@@ -160,7 +160,7 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Why.** Teams mix tools, and one generator keeps every tool's setup consistent with a single source. A test generates all nine setups and checks every JSON, TOML and YAML front matter parses and that no Claude-only syntax leaks into other tools' files. Enforcement that lives in the MCP server (secret filtering, redaction, dedupe, tiers) holds in every tool; hook-based guards remain Claude Code only, and the docs say so.
 
 ### ADR-22: OpenSpec mode adapts to the existing spec system
-**Decision.** When `openspec/` exists, SpecForge does not create `specs/features`. Features are OpenSpec changes (`openspec/changes`), capability specs are read from `openspec/specs`, SpecForge's own generated context goes to `openspec/specforge/`, and the lifecycle workflows carry a mapping to OpenSpec's files and format. Creating, applying and archiving changes stays with OpenSpec's workflows. SpecForge adds parsing, a structure check that needs no CLI, drift on code references, scenario-to-test coverage and gap detection.
+**Decision.** When `openspec/` exists, SpecAnvil does not create `specs/features`. Features are OpenSpec changes (`openspec/changes`), capability specs are read from `openspec/specs`, SpecAnvil's own generated context goes to `openspec/specanvil/`, and the lifecycle workflows carry a mapping to OpenSpec's files and format. Creating, applying and archiving changes stays with OpenSpec's workflows. SpecAnvil adds parsing, a structure check that needs no CLI, drift on code references, scenario-to-test coverage and gap detection.
 **Why.** Two spec systems in one repo is worse than either. Verified on the OpenSpec project itself: its own files are byte-identical after `init`.
 
 ### ADR-23: Commands that come from an agent are untrusted input

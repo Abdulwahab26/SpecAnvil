@@ -1,4 +1,4 @@
-"""Token benchmark: typical agent lookups through specforge-mcp vs reading the files whole."""
+"""Token benchmark: typical agent lookups through specanvil-mcp vs reading the files whole."""
 import asyncio
 import sys
 
@@ -10,7 +10,7 @@ CALLS = [tuple(x.split("|", 2)) for x in sys.argv[2:]]
 
 
 async def main():
-    params = StdioServerParameters(command="specforge-mcp", args=[], cwd=ROOT)
+    params = StdioServerParameters(command="specanvil-mcp", args=[], cwd=ROOT)
     async with stdio_client(params) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()
