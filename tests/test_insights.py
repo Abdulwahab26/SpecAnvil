@@ -233,3 +233,19 @@ def test_crlf_files_parse_like_lf(tmp_path):
     q = {(r["qualname"], r["kind"]) for r in ix.db.execute("SELECT qualname, kind FROM symbols")}
     assert {("jobs.build.runs-on", "key"), ("MAX", "constant"), ("User.name", "field"), ("User.go", "function"),
             ("A > B", "section")} <= q
+
+
+def test_search_columns_reads_sql_migrations(tmp_path):
+    """Columns come from CREATE TABLE statements too; constraint lines are not columns."""
+    from specanvil.insights import (
+        search_columns,  # insights first: insights_flow imports from it
+    )
+    (tmp_path / "db").mkdir()
+    (tmp_path / "db" / "001_orders.sql").write_text(
+        "CREATE TABLE orders (\n  id INTEGER PRIMARY KEY,\n  buyer_id VARCHAR(64) NOT NULL,\n"
+        "  total NUMERIC(10,2),\n  PRIMARY KEY (id)\n);\n", encoding="utf-8")
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    cols = {(c["table"], c["column"]): c["type"] for c in search_columns(ix)}
+    assert cols[("orders", "buyer_id")].startswith("VARCHAR") and ("orders", "total") in cols
+    assert ("orders", "PRIMARY") not in cols

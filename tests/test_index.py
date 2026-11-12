@@ -1,6 +1,7 @@
 """Index, specs, bootstrap, unit-test plans, docs engine, code graph."""
 import json
 
+import pytest
 from helpers import (
     _azure_repo,
     _graph_repo,
@@ -411,3 +412,70 @@ def test_path_source_is_queryable(tmp_path, monkeypatch):
     assert res["symbols"] > 5
     ix = sources.open_source(res["source"])
     assert ix.search("create user")[0]["name"] == "create_user"
+
+
+def test_kotlin_functions_objects_and_properties_are_indexed(tmp_path):
+    """The Kotlin grammar's structure view names classes only: member and top-level functions, `object`s and
+    properties (name before type) are read from the source."""
+    (tmp_path / "Owners.kt").write_text(
+        "package clinic\n\n"
+        "interface OwnerRepository {\n    fun findByLastName(lastName: String): Collection<Owner>\n}\n\n"
+        "@Controller\nclass OwnerController(val owners: OwnerRepository) {\n\n"
+        "    private lateinit var visits: VisitRepository\n\n"
+        "    @GetMapping(\"/owners\")\n    fun processFindForm(owner: Owner): String {\n"
+        "        val results = owners.findByLastName(owner.lastName)\n        return if (results.isEmpty()) \"none\" else \"list\"\n    }\n\n"
+        "    fun count() = owners.findByLastName(\"\").size\n\n"
+        "    companion object {\n        const val PAGE_SIZE = 5\n    }\n}\n\n"
+        "object Slugs {\n    fun String.toSlug(): String =\n        lowercase()\n            .replace(' ', '-')\n}\n\n"
+        "fun <T> firstOrNull(items: List<T>): T? {\n    return items.firstOrNull()\n}\n", encoding="utf-8")
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    if ix.db.execute("SELECT parser FROM files").fetchone()[0] != "tree-sitter":
+        pytest.skip("kotlin grammar not cached")
+    syms = {r["qualname"]: r for r in ix.db.execute("SELECT qualname, kind, start_line, end_line FROM symbols")}
+    assert syms["OwnerRepository.findByLastName"]["kind"] == "method"
+    find = syms["OwnerController.processFindForm"]
+    assert (find["kind"], find["end_line"] - find["start_line"]) == ("method", 3)
+    assert syms["OwnerController.count"]["kind"] == "method"
+    assert syms["OwnerController.visits"]["kind"] == "field" and "OwnerController.VisitRepository" not in syms
+    assert "OwnerController.results" not in syms                      # a local, not a symbol
+    slug = syms["Slugs.toSlug"]
+    assert slug["end_line"] - slug["start_line"] == 2                 # expression body continued on indented lines
+    assert syms["firstOrNull"]["kind"] == "function"
+
+
+def test_calls_through_injected_dependencies_follow_the_declared_type(tmp_path):
+    """`this.users.findAll()` goes to the `findAll` of the class `users` is declared as, not to the caller's own
+    `findAll`; an interface-typed field reaches the implementation; an unindexed type yields no edge."""
+    from specanvil.graph import CodeGraph
+    (tmp_path / "users.service.ts").write_text(
+        "export class UsersService {\n  findAll() {\n    return [];\n  }\n  delete(id: number) {\n    return id;\n  }\n}\n")
+    (tmp_path / "tags.service.ts").write_text("export class TagsService {\n  findAll() {\n    return [];\n  }\n}\n")
+    (tmp_path / "users.controller.ts").write_text(
+        "import { UsersService } from './users.service';\nimport { Repository } from 'typeorm';\n\n"
+        "export class UsersController {\n"
+        "  constructor(private readonly users: UsersService, private readonly repo: Repository<User>) {}\n\n"
+        "  findAll() {\n    return this.users.findAll();\n  }\n\n"
+        "  remove(id: number) {\n    this.repo.findAll();\n    return this.users.delete(id);\n  }\n}\n")
+    (tmp_path / "Billing.java").write_text(
+        "interface Gateway {\n    void charge(int cents);\n}\n\n"
+        "class StripeGateway implements Gateway {\n    public void charge(int cents) {\n    }\n}\n\n"
+        "class Checkout {\n    private final Gateway gateway;\n\n"
+        "    Checkout(Gateway gateway) {\n        this.gateway = gateway;\n    }\n\n"
+        "    void pay(int cents) {\n        gateway.charge(cents);\n    }\n}\n")
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    if {r[0] for r in ix.db.execute("SELECT parser FROM files")} != {"tree-sitter"}:
+        pytest.skip("typescript / java grammars not cached")
+    g = CodeGraph(ix)
+
+    def callees(qualname: str) -> set[str]:
+        sid = ix.db.execute("SELECT id FROM symbols WHERE qualname=?", (qualname,)).fetchone()[0]
+        return {f"{g.sym[t]['path']}::{g.sym[t]['qualname']}" for t, _ in g.callees(sid)}
+    assert callees("UsersController.findAll") == {"users.service.ts::UsersService.findAll"}
+    assert callees("UsersController.remove") == {"users.service.ts::UsersService.delete"}   # Repository is not indexed
+    assert callees("Checkout.pay") == {"Billing.java::Gateway.charge", "Billing.java::StripeGateway.charge"}
+    ix.cfg["typed_receivers"] = False
+    assert "users.service.ts::UsersService.findAll" not in {
+        f"{CodeGraph(ix).sym[t]['path']}::{CodeGraph(ix).sym[t]['qualname']}"
+        for t, _ in CodeGraph(ix).callees(ix.db.execute("SELECT id FROM symbols WHERE qualname='UsersController.findAll'").fetchone()[0])}

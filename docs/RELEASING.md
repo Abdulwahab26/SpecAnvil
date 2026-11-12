@@ -27,5 +27,12 @@ clones and `pip install git+https://github.com/Abdulwahab26/Specforge` keep work
 
 1. Before Settings > General > Change visibility > Public: read through the git history for anything that should not
    be public (keys, private repo names, customer data). History becomes public with the code.
-2. After it is public: add topics (`mcp`, `claude-code`, `spec-driven-development`), enable private vulnerability
+2. Settings > Pages > Source: **GitHub Actions**. The `Docs` workflow then publishes the site in `docs/` to
+   `https://abdulwahab26.github.io/SpecAnvil/` on every push to `main` that changes it.
+3. After it is public: add topics (`mcp`, `claude-code`, `spec-driven-development`), enable private vulnerability
    reporting (Settings > Security), and turn on Dependabot alerts.
+
+## VS Code extension
+`editors/vscode` is packaged with `npx @vscode/vsce package`. Publishing to the Marketplace needs a publisher account
+and a personal access token (`npx @vscode/vsce publish`); set `publisher` in `editors/vscode/package.json` to the
+account's id first.

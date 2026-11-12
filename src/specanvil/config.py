@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Mapping
 
 STATE_DIR = ".specanvil"
 INDEX_FILE = "index.db"
@@ -107,7 +108,7 @@ def features_dir(cfg: dict) -> str:
     return (cfg.get("features_dir") or f"{cfg.get('specs_dir', 'specs')}/features").rstrip("/")
 
 
-def discover_root(start: Path | None = None, env: dict | None = None) -> Path:
+def discover_root(start: Path | None = None, env: Mapping[str, str] | None = None) -> Path:
     """The project an MCP server should serve, for any client:
     SPECANVIL_ROOT, then the client's own project variable (Claude Code: CLAUDE_PROJECT_DIR), then the nearest
     folder above the working directory that holds .specanvil/ or .git, then the working directory itself.

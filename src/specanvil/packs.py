@@ -20,6 +20,7 @@ import urllib.request
 import zipfile
 from importlib import resources
 from pathlib import Path
+from typing import Any
 
 from .index import CodeIndex
 from .profile import home
@@ -149,7 +150,7 @@ def add(spec: str) -> dict:
         name = "@" + name
     else:
         name, _, ver = target.partition("@")
-    fetch = {"npm": _npm, "pypi": _pypi, "go": _go}.get(kind)
+    fetch: Any = {"npm": _npm, "pypi": _pypi, "go": _go}.get(kind)
     if not fetch:
         raise ValueError("Pack spec must be npm:, pypi:, go:, gh: or a catalog name")
     version, data, strip = fetch(name, ver or None)

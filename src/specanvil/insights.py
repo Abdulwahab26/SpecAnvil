@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 from collections import Counter, defaultdict, deque
+from typing import Any
 
 from .config import debug_exc
 from .graph import CodeGraph, cycles, layer_violations
@@ -248,9 +249,9 @@ def similar_symbols(ix: CodeIndex, ref: str | None = None, threshold: float = 0.
     for a, b in pairs:
         clusters[find(a)].update((a, b))
     out = []
-    for members in clusters.values():
-        ms = sorted(members)
-        sims = [v for (a, b), v in pairs.items() if a in members and b in members]
+    for group in clusters.values():
+        ms = sorted(group)
+        sims = [v for (a, b), v in pairs.items() if a in group and b in group]
         out.append({"similarity": max(sims), "size": len(ms), "cross_file": len({by_id[m]["path"] for m in ms}) > 1,
                     "lines": by_id[ms[0]]["end_line"] - by_id[ms[0]]["start_line"] + 1,
                     "symbols": [f"{by_id[m]['path']}::{by_id[m]['qualname']} (L{by_id[m]['start_line']})" for m in ms]})
@@ -265,7 +266,7 @@ def related_symbols(ix: CodeIndex, ref: str, limit: int = 15) -> list[dict]:
     sid = s["id"]
     callers = {c for c, _ in g.callers(sid)}
     callees = {c for c, _ in g.callees(sid)}
-    score: Counter = Counter()
+    score: Any = Counter()  # a Counter used with fractional weights
     why: dict[int, set] = defaultdict(set)
     for c in callers:
         score[c] += 3
@@ -598,7 +599,7 @@ def winnow(ix: CodeIndex, kind: str | None = None, path_glob: str | None = None,
         if c < min_complexity:
             continue
         callers = len(g.callers(r["id"])) if g else None
-        if g and (callers < min_callers or (max_callers is not None and callers > max_callers)):
+        if callers is not None and (callers < min_callers or (max_callers is not None and callers > max_callers)):
             continue
         if untested is not None and ((r["name"] not in test_names) != untested):
             continue

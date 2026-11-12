@@ -1,6 +1,6 @@
 # SpecAnvil architecture
 
-SpecAnvil is a deterministic local toolchain (Python) plus a set of Claude Code assets (agents, commands, skills, hooks, MCP config) generated per repository. The core design rule: **anything that can be decided by code is enforced by code; the model is used only for judgement.**
+SpecAnvil is a deterministic local toolchain (Python) plus a set of assets for AI coding tools (agents, commands, skills, hooks, MCP configuration) generated per repository. The diagram shows the Claude Code layout; the other supported tools receive the same content in their own formats (ADR-21). The core design rule: **anything that can be decided by code is enforced by code; the model is used only for judgement.**
 
 ```mermaid
 flowchart TB
@@ -10,7 +10,7 @@ flowchart TB
     DT[detect<br/>stack · DBs · tickets · conventions] --> BS[bootstrap]
     IX --> BS
     PR[(~/.specanvil/profile.json<br/>models per role · backfill prefs)] --> BS
-    IX --> MCP[specanvil-mcp<br/>43 tools · 4 tiers]
+    IX --> MCP[specanvil-mcp<br/>96 tools · 5 tiers]
     GR[graph<br/>calls · bases · imports] --> MCP
     SEM[(local embeddings<br/>optional)] --> MCP
     SRC[sources<br/>deps · GitHub · folders] --> MCP
@@ -28,15 +28,15 @@ flowchart TB
   CC --> Claude
 ```
 
-## How it maps to the Claude Certified Architect – Foundations domains
+## Design areas
 
-| Domain (weight) | Where it shows up |
+| Area | How SpecAnvil handles it |
 |---|---|
-| **Agentic architecture & orchestration** (27%) | `/sa:flow` orchestrator + 13 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
-| **Claude Code configuration & workflows** (20%) | Generated `CLAUDE.md` block, slash commands with `argument-hint`, subagents with `model` and `tools` frontmatter, project skills generated from the repo's own code, `.mcp.json` merge that never clobbers user servers, `settings.json` hooks and permissions. Upgrades re-render assets without touching user-edited specs. |
-| **Prompt engineering & structured output** (20%) | Commands state role, inputs, procedure, output contract and next step. Machine-readable artifacts where a program consumes them (`milestones.json`, schema-checked by `validate_plan`); Gherkin ACs and `path::Qualname` refs in specs so drift can be checked by code. |
-| **Tool design & MCP integration** (18%) | Narrow, composable tools with ids that chain (`search_symbols` → `get_symbol(id)`), budget parameters, section-level reads, errors raised as MCP `isError` with an actionable next step, and tools that return the minimum context a small model needs (`next_test_milestone`). Connector catalog picks third-party MCP servers from detected signals with `${ENV}` secrets and read-only defaults. |
-| **Context management & reliability** (15%) | Token-budgeted retrieval with a measured ledger; server-enforced session dedupe with compaction reset and large-symbol skeletons (ADR-10); incremental index kept fresh by a hook; specs sized ≤ ~1.5k tokens and read by section; subagents receive file paths, not transcripts; retrieval quality measured by an eval set (`tests/evals`). |
+| **Agent orchestration** | `/sa:flow` orchestrator + 13 single-responsibility subagents with human gates and bounded retry loops (verify ≤ 3 rounds). Planner/executor split for unit tests (ADR-4). Parallel fan-out with explicit hand-offs (spec paths and task ids, never whole conversations). Resumable long-running backfill with checkpointed state (ADR-6). |
+| **Tool configuration and workflows** | Generated `CLAUDE.md` block, slash commands with `argument-hint`, subagents with `model` and `tools` frontmatter, project skills generated from the repo's own code, `.mcp.json` merge that never clobbers user servers, `settings.json` hooks and permissions. Upgrades re-render assets without touching user-edited specs. |
+| **Prompts and structured output** | Commands state role, inputs, procedure, output contract and next step. Machine-readable artifacts where a program consumes them (`milestones.json`, schema-checked by `validate_plan`); Gherkin ACs and `path::Qualname` refs in specs so drift can be checked by code. |
+| **Tool design and MCP integration** | Narrow, composable tools with ids that chain (`search_symbols` → `get_symbol(id)`), budget parameters, section-level reads, errors raised as MCP `isError` with an actionable next step, and tools that return the minimum context a small model needs (`next_test_milestone`). Connector catalog picks third-party MCP servers from detected signals with `${ENV}` secrets and read-only defaults. |
+| **Context management and reliability** | Token-budgeted retrieval with a measured ledger; server-enforced session dedupe with compaction reset and large-symbol skeletons (ADR-10); incremental index kept fresh by a hook; specs sized ≤ ~1.5k tokens and read by section; subagents receive file paths, not transcripts; retrieval quality measured by an eval set (`tests/evals`). |
 
 **Programmatic vs prompt-based enforcement** is applied deliberately throughout:
 
@@ -110,13 +110,13 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 ### ADR-10: Server-enforced session dedupe and large-symbol skeletons
 **Context.** In long sessions agents re-fetch the same code repeatedly, and a few huge functions dominate token spend.
 **Decision.** The MCP server keeps a per-session ledger (symbol id → body hash). Unchanged bodies are referenced, not resent; `get_context` spends its budget only on new code. A PreCompact hook resets the ledger so the model is never told it "has" code that was summarised away. Symbols over 1,500 tokens return a structural skeleton (top-level statements, nested blocks folded) with `full=true` / `focus=` escape hatches.
-**Result.** −47% tokens vs jCodeMunch on its own benchmark (−31% with skeletons off), with comparable picks.
+**Result.** On the fixed lookup workload in `docs/BENCHMARKS.md`, 15 fresh lookups return 6,799 tokens; a body fetched again in the same session returns a one-line reference.
 **Trade-off.** A skeleton can cost one extra call when the agent needs a nested block. `focus=` keeps that call small.
 
 ### ADR-11: Code graph from regex extraction plus scoped name resolution
 **Context.** Call/class hierarchies, PageRank, dead code and cycles need a graph across 300+ languages without per-language compilers.
 **Decision.** One extra pass per file (same worker, no extra reads) records call sites *with their receiver*, base classes, package/namespace and declarations. Imports are resolved to files with language-aware rules. Calls resolve by scope: receiver match (`crud.create_user` → `crud.py`) > same file > imported files > globally unique name; ambiguous calls make no edge rather than a wrong one.
-**Trade-off.** Not a type checker: dynamic dispatch and DI are invisible, which tools state in their output. Precision beats recall: a missing edge is safer than a wrong one, and dead code is double-checked by a word search before it is reported.
+**Trade-off.** Not a type checker: dynamic dispatch on untyped receivers is invisible, which tools state in their output. Calls on receivers with a declared type are followed since 0.11 (ADR-26). Precision beats recall: a missing edge is safer than a wrong one, and dead code is double-checked by a word search before it is reported.
 **Lesson recorded.** Two field regexes with `\s*` crossing newlines cost 7.5 s on Django; line-bounded `[ \t]*` fixed it (0.8 s). Extractor regexes are benchmarked per pattern.
 
 ### ADR-12: Semantic search as an optional, local, measured layer
@@ -153,7 +153,7 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 
 ### ADR-20: A tiny default surface with runtime switching and a dispatcher fallback
 **Decision.** The default tier is `lite` (6 tools). `set_tool_tier` re-registers tools at runtime and sends the classic `notifications/tools/list_changed` (plus the SDK's newer subscription event); `run_tool(name, arguments)` calls any tool regardless of tier. Advertised schemas drop auto-generated titles and collapse `Optional[X]` to `X`; validation still uses the Python signature.
-**Why.** Schemas are paid on every turn. Some clients have open issues about not refreshing on list-changed mid-session, so switching alone would strand tools; the dispatcher guarantees reachability. Result: ~790 tokens default (jCodeMunch ~1,050), ~7,870 for all 92 tools (jCodeMunch ~28,142).
+**Why.** Schemas are paid on every turn. Some clients have open issues about not refreshing on list-changed mid-session, so switching alone would strand tools; the dispatcher guarantees reachability. Result: about 790 tokens by default and about 8,120 with all 96 tools loaded.
 
 ### ADR-21: One neutral bundle, translated into each AI tool's native formats
 **Decision.** Commands, role agents, skills, rules and MCP servers are built once from the existing assets (written in the Claude Code dialect), then translated per tool: command syntax (`/sa:x`, `/sa-x`, `#sa-x`, skills, playbooks), file paths, argument placeholders (`$ARGUMENTS`, `${input:…}`, `{{args}}`), sub-agent wording, and MCP file/key/env syntax. Tools are detected from their config folders; `AGENTS.md` carries the shared rules for the tools that read it, with a one-line "how to run a workflow in your tool" table. Tools without commands get Agent Skills or manual steering; tools without local MCP get a CLI bridge to the same tools.
@@ -168,10 +168,15 @@ Layers: never indexed (scanner), redacted in any returned text (tokens.redact), 
 **Why.** "Tests decide what is done" must not become "the plan file can run anything". The same principle as the secret guard: enforce in code, not in the prompt.
 
 ### ADR-24: Claims are gates measured against something independent
-**Decision.** Retrieval is gated on 86 questions over five repos in four languages; the call graph is gated against call pairs observed at runtime; concurrency is gated by a multi-process stress test; coverage has a floor; type errors may not increase. Datasets verify their own ground truth before scoring.
+**Decision.** Retrieval is gated on 162 questions over ten repositories in ten languages; calls through injected dependencies on 66 hand-checked call sites; the call graph is gated against call pairs observed at runtime; concurrency is gated by a multi-process stress test; coverage has a floor; the type check must be clean. Datasets verify their own ground truth before scoring.
 **Why.** The 12-question eval said "perfect"; the first question from another language found three defects. A metric only means something if it can fail.
 
 ### ADR-25: Bounded local state
 **Decision.** Ledgers older than `log_retention_days` (90) are folded into per-tool totals and deleted, so all-time savings stay correct while the tables stay small; the database is compacted only when more than a quarter of its pages are free; the build reads, parses and writes in batches of 2,000 files; `init` records what it wrote in a manifest so `uninstall` removes exactly that.
 **Why.** A tool that lives in every repo for years must not grow without limit or leave files behind.
 
+### ADR-26: Follow declared types for receivers, and stop at the edge of the repository
+**Context.** In Spring, NestJS and ASP.NET Core code most calls between layers go through an injected field (`this.users.findAll()`). Resolving by name sent such a call to a same-named method in the caller's own file or dropped it: 18 of 66 hand-checked call sites resolved correctly and 9 resolved to the wrong method.
+**Decision.** The graph reads the declared type of fields, constructor parameters (including Kotlin, C# and TypeScript constructor properties) and parameters from signatures already in the index, in both `name: Type` and `Type name` order. A call on such a receiver goes to that type's method, to the implementations or subclasses of the type (up to three levels, eight targets), or to a supertype when the method is inherited. When the declared type is not in the index, the call leaves the repository and produces no edge. Method names that are also keywords (`get`, `set`, `delete`) are recorded as calls only when they have a receiver and are resolved only through a declared type or the caller's own class. `"typed_receivers": false` in `.specanvil/config.json` restores name-only resolution.
+**Why.** The signatures were already stored, so this needs no second parse and no schema change. An edge to the wrong method is worse than no edge: impact analysis and dead-code reports are read as facts.
+**Trade-off.** No type inference: receivers returned by a call, locals assigned from a call, and wiring by name or qualifier are not followed. Measured on 66 call sites in five repositories, one of them held out (`docs/BENCHMARKS.md`).

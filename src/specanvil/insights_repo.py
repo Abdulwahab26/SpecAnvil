@@ -126,7 +126,7 @@ def list_workspaces(ix: CodeIndex) -> dict:
         p = root / fname
         if p.exists():
             for m in re.finditer(rx, p.read_text(encoding="utf-8", errors="ignore"), re.M):
-                declared += [x.strip(" '\"") for x in (m.group(1) or m.group(m.lastindex) or "").split(",") if x.strip()]
+                declared += [x.strip(" '\"") for x in (m.group(1) or m.group(m.lastindex or 0) or "").split(",") if x.strip()]
     sln = [str(p.relative_to(root)) for p in root.glob("*.sln")]
     return {"declared_workspaces": declared, "solutions": sln, "projects": st.get("projects", [])}
 

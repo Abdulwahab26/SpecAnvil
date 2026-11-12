@@ -4,3 +4,6 @@ dist/
 .specanvil/
 .pytest_cache/
 .coverage
+site/
+node_modules/
+*.vsix

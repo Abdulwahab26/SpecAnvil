@@ -3,7 +3,7 @@
 ## Setup
 ```bash
 pip install -e ".[semantic]" pytest
-specanvil grammars python javascript typescript tsx java go --path .
+specanvil grammars python javascript typescript tsx java go kotlin --path .
 pytest -q
 ```
 

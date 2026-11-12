@@ -16,7 +16,7 @@ try:  # pragma: no cover - import guard
     import tree_sitter_language_pack as tslp
 except Exception:  # noqa: BLE001
     debug_exc("parser:15")
-    tslp = None
+    tslp = None  # type: ignore[assignment]  # optional dependency: None when it is not installed
 
 _FAILED_LANGS: set[str] = set()
 
@@ -66,7 +66,7 @@ def fetch_grammars(langs: list[str]) -> dict:
         cache = None
     return {"downloaded": ok, "unavailable": bad, "already_local": sorted(set(langs) & local_grammars()),
             "cache": cache}
-PARSER_VERSION = "14"  # bump to force a full re-index after parser changes
+PARSER_VERSION = "16"  # bump to force a full re-index after parser changes
 
 _EXT_FALLBACK = {
     ".py": "python", ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
@@ -155,8 +155,9 @@ def _parse_tree_sitter(source: str, lang: str) -> FileParse | None:
 
     docs: dict[str, str] = {}
     for d in (res.docstrings or []):
-        if getattr(d, "associated_item", None):
-            docs.setdefault(d.associated_item, _first_line(d.text))
+        item = getattr(d, "associated_item", None)
+        if item:
+            docs.setdefault(item, _first_line(d.text))
     exported_names = set()
     for e in (res.exports or []):
         nm = getattr(e, "name", None)
@@ -320,6 +321,94 @@ def _js_assignments(source: str, existing: list[Symbol]) -> list[Symbol]:
     return out
 
 
+# Kotlin: the grammar pack's structure view reports classes but returns functions without a name and leaves out
+# member functions and `object` declarations, so they are read from the source here.
+_KT_MODS = (r"(?:(?:public|private|protected|internal|open|override|abstract|final|suspend|inline|infix|operator|"
+            r"tailrec|external|actual|expect|data|sealed|companion)[ \t]+)*")
+_KT_FUN_RX = re.compile(r"^([ \t]*)" + _KT_MODS + r"fun[ \t]+(?:<[^>\n]*>[ \t]*)?(?:[\w<>?, ]+\.)?"
+                        r"(`[^`\n]+`|[A-Za-z_]\w*)[ \t]*\(", re.M)
+_KT_OBJECT_RX = re.compile(r"^([ \t]*)" + _KT_MODS + r"object[ \t]+([A-Za-z_]\w*)", re.M)
+
+
+def _paren_end(source: str, start: int) -> int:
+    """Index just after the parenthesis closing the one at `start` (or `start` + 1 if it never closes)."""
+    depth = 0
+    for i in range(start, len(source)):
+        if source[i] == "(":
+            depth += 1
+        elif source[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+    return start + 1
+
+
+def _kotlin_declarations(source: str, existing: list[Symbol]) -> list[Symbol]:
+    lines = source.split("\n")
+    taken = {(s.name, s.start_line) for s in existing}
+    line_of = lambda pos: source.count("\n", 0, pos) + 1  # noqa: E731
+    found: list[Symbol] = []
+
+    def indented_end(line: int, indent: int) -> int:
+        """Last line of a declaration without braces: lines that follow and are indented deeper belong to it."""
+        end = line
+        for j in range(line, len(lines)):
+            text = lines[j]
+            if text.strip() and len(text) - len(text.lstrip()) <= indent:
+                break
+            if text.strip():
+                end = j + 1
+        return end
+
+    for m in _KT_OBJECT_RX.finditer(source):
+        line = line_of(m.start(2))
+        if (m.group(2), line) in taken:
+            continue
+        close = _block_end(source, m.end()) if "{" in lines[line - 1] else None
+        found.append(Symbol(name=m.group(2), kind="class", qualname=m.group(2), signature=lines[line - 1].strip()[:240],
+                            start_line=line, end_line=line_of(close) if close is not None else line))
+    for m in _KT_FUN_RX.finditer(source):
+        name = m.group(2).strip("`")
+        line = line_of(m.start(2))
+        if (name, line) in taken:
+            continue
+        after = _paren_end(source, m.end() - 1)
+        nl = source.find("\n", after)
+        head = source[after:nl if nl >= 0 else len(source)]
+        if "{" not in head and "=" not in head and nl >= 0:  # body starts on the next line: `fun f(): T\n    = expr`
+            nxt = source[nl + 1:source.find("\n", nl + 1) if source.find("\n", nl + 1) >= 0 else len(source)]
+            if nxt.lstrip().startswith(("=", "{")):
+                head = head + " " + nxt.strip()[:1]
+        if "{" in head and "=" not in head.split("{")[0]:
+            close = _block_end(source, after)
+            end_line = line_of(close) if close is not None else line
+        elif "=" in head:  # expression body, possibly continued on deeper-indented lines
+            end_line = indented_end(line_of(after), len(m.group(1)))
+        else:              # abstract or interface member: the signature is the whole declaration
+            end_line = line_of(after)
+        sig = " ".join(source[m.start():after].split()) + head.split("{")[0].split("=")[0].rstrip()
+        doc = ""
+        k = line - 2
+        while k >= 0 and lines[k].strip().startswith("@"):
+            k -= 1
+        if k >= 0 and lines[k].strip().startswith(("//", "*", "/**")):
+            doc = _first_line(lines[k]) or (_first_line(lines[k - 1]) if k > 0 else "")
+        found.append(Symbol(name=name, kind="function", qualname=name, signature=sig[:240], start_line=line,
+                            end_line=max(line, end_line), doc=doc, exported="private" not in m.group(0)))
+    # parents: the innermost class-like symbol (from the grammar or found above) that contains the declaration
+    boxes = sorted((s for s in existing + found if s.kind in ("class", "interface", "enum", "object", "struct")),
+                   key=lambda s: s.end_line - s.start_line)
+    for s in sorted(found, key=lambda s: s.start_line):
+        box = next((b for b in boxes if b is not s and b.start_line <= s.start_line and s.end_line <= b.end_line
+                    and (b.start_line, b.end_line) != (s.start_line, s.end_line)), None)
+        if box is not None:
+            s.parent = box.qualname
+            s.qualname = f"{box.qualname}.{s.name}"
+            if s.kind == "function":
+                s.kind = "method"
+    return found
+
+
 def parse_source(rel_path: str, source: str) -> FileParse:
     if "\r" in source:  # CRLF checkouts (Windows, core.autocrlf): line-anchored patterns expect "\n"
         source = source.replace("\r\n", "\n")
@@ -344,6 +433,8 @@ def parse_source(rel_path: str, source: str) -> FileParse:
             if stmt not in known:
                 fp.imports.append(stmt)
                 known.add(stmt)
+    if fp.language == "kotlin" and fp.parser == "tree-sitter":
+        fp.symbols += _kotlin_declarations(source, fp.symbols)
     ex = extract(source, fp.language, fp.symbols)
     for name, kind, line, parent in ex.decls:
         fp.symbols.append(Symbol(name=name, kind=kind, qualname=f"{parent}.{name}" if parent else name,

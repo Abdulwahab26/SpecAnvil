@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 KEYWORDS = set("""
 if else elif for while do switch case break continue return yield await async def function fn func class
@@ -61,6 +62,11 @@ DECL_PATTERNS: dict[str, list[tuple[str, re.Pattern]]] = {
         ("field", re.compile(r"^[ \t]+(?:(?:public|private|protected|internal|static|final|readonly|const|volatile|transient|lateinit|override)\s+)+(?:val\s+|var\s+)?[\w<>\[\],.?]+(?:\s+|\s*:\s*)?([A-Za-z_]\w*)\s*(?::\s*[\w<>?,. ]+)?\s*(?:=|;|$)", re.M)),
         ("auto", re.compile(r"^(?:(?:private|internal|public|const)\s+)*(?:val|var)\s+([A-Za-z_]\w*)", re.M)),  # kotlin top-level
     ],
+    "kotlin": [  # `private lateinit var owners: OwnerRepository`: the name comes before the type
+        ("field", re.compile(r"^[ \t]+(?:@[\w.:]+(?:\([^)\n]*\))?[ \t]+)*(?:(?:public|private|protected|internal|open|override|"
+                             r"abstract|final|const|lateinit)[ \t]+)*(?:val|var)[ \t]+(?:[\w<>?, ]+\.)?([A-Za-z_]\w*)", re.M)),
+        ("auto", re.compile(r"^(?:(?:private|internal|public|const|lateinit)[ \t]+)*(?:val|var)[ \t]+([A-Za-z_]\w*)", re.M)),
+    ],
     "rust": [
         ("constant", re.compile(r"^\s*(?:pub(?:\([\w:]+\))?\s+)?(?:const|static)\s+(?:mut\s+)?(\w+)", re.M)),
         ("type", re.compile(r"^\s*(?:pub(?:\([\w:]+\))?\s+)?type\s+(\w+)", re.M)),
@@ -72,7 +78,7 @@ DECL_PATTERNS: dict[str, list[tuple[str, re.Pattern]]] = {
           ("type", re.compile(r"^typedef\s+[^;]*?\b(\w+)\s*;", re.M))],
 }
 FAMILY = {"python": "python", "javascript": "js", "typescript": "js", "tsx": "js", "vue": "js", "svelte": "js",
-          "go": "go", "java": "jvm", "kotlin": "jvm", "csharp": "jvm", "scala": "jvm", "dart": "jvm",
+          "go": "go", "java": "jvm", "kotlin": "kotlin", "csharp": "jvm", "scala": "jvm", "dart": "jvm",
           "rust": "rust", "ruby": "ruby", "php": "php", "c": "c", "cpp": "c", "objc": "c"}
 
 
@@ -175,7 +181,7 @@ def extract(source: str, lang: str, symbols: list) -> Extras:
     callable_at = innermost_table(callables)
     container_at = innermost_table(containers)
 
-    def enclosing(line: int, pool) -> object | None:
+    def enclosing(line: int, pool) -> Any:
         t = callable_at if pool is callables else container_at
         return t[line] if 0 <= line < n_lines else None
 
@@ -280,7 +286,8 @@ def extract(source: str, lang: str, symbols: list) -> Extras:
             continue
         for cm in CALL_RX.finditer(text):
             recv, callee = cm.group(1) or "", cm.group(2)
-            if callee in KEYWORDS or len(callee) < 2 or (recv, callee) in seen:
+            # `repo.delete(...)` is a method call even though `delete` is a keyword; a bare `delete (...)` is not
+            if (callee in KEYWORDS and not recv) or len(callee) < 2 or (recv, callee) in seen:
                 continue
             seen.add((recv, callee))
             ex.calls.append((owner.qualname, callee, ln_no, recv if recv not in KEYWORDS else ""))

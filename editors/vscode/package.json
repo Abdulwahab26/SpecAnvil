@@ -1,0 +1,46 @@
+{
+  "name": "specanvil",
+  "displayName": "SpecAnvil",
+  "description": "Spec drift in the Problems panel, the repository health report and code diagrams from the local SpecAnvil index.",
+  "version": "0.1.0",
+  "publisher": "specanvil",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/Abdulwahab26/SpecAnvil" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other", "Linters"],
+  "main": "./extension.js",
+  "activationEvents": ["workspaceContains:.specanvil/config.json"],
+  "contributes": {
+    "commands": [
+      { "command": "specanvil.checkDrift", "title": "SpecAnvil: Check Spec Drift" },
+      { "command": "specanvil.lockSpecs", "title": "SpecAnvil: Mark Specs as Verified (drift --lock)" },
+      { "command": "specanvil.showReport", "title": "SpecAnvil: Show Health Report" },
+      { "command": "specanvil.showDiagram", "title": "SpecAnvil: Show Diagram" },
+      { "command": "specanvil.showChangeRisk", "title": "SpecAnvil: Show Change Risk for Current Changes" },
+      { "command": "specanvil.reindex", "title": "SpecAnvil: Rebuild Index" }
+    ],
+    "configuration": {
+      "title": "SpecAnvil",
+      "properties": {
+        "specanvil.path": {
+          "type": "string",
+          "default": "specanvil",
+          "description": "Path to the specanvil executable."
+        },
+        "specanvil.checkDriftOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-check spec drift when a file is saved."
+        },
+        "specanvil.riskBase": {
+          "type": "string",
+          "default": "HEAD",
+          "description": "Git ref the change-risk view compares the working tree against (for example origin/main)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/drift.test.js"
+  }
+}

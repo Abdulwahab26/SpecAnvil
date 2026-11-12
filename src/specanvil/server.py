@@ -17,9 +17,10 @@ try:
     from mcp.server.mcpserver import MCPServer as _Server  # mcp >= 2
     from mcp.server.mcpserver.exceptions import ToolError
 except ImportError:  # pragma: no cover
-    from mcp.server.fastmcp import Context
-    from mcp.server.fastmcp import FastMCP as _Server  # mcp 1.x
-    from mcp.server.fastmcp.exceptions import ToolError
+    # mcp 1.x names for the same classes
+    from mcp.server.fastmcp import Context  # type: ignore
+    from mcp.server.fastmcp import FastMCP as _Server  # type: ignore
+    from mcp.server.fastmcp.exceptions import ToolError  # type: ignore[no-redef]
 
 from . import analysis as _analysis
 from .config import debug_exc, discover_root, load_config

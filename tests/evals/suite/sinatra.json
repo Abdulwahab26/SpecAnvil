@@ -1,0 +1,120 @@
+{
+ "repo": "sinatra/sinatra",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "redirect the browser to another URL",
+   "expected": [
+    "redirect"
+   ]
+  },
+  {
+   "task": "send a file as the response",
+   "expected": [
+    "send_file"
+   ]
+  },
+  {
+   "task": "stop the request immediately and return a response",
+   "expected": [
+    "halt"
+   ]
+  },
+  {
+   "task": "pass on to the next matching route",
+   "expected": [
+    "pass"
+   ]
+  },
+  {
+   "task": "run the routes and find one that matches the request",
+   "expected": [
+    "route!",
+    "process_route"
+   ]
+  },
+  {
+   "task": "serve a static file from the public folder",
+   "expected": [
+    "static!"
+   ]
+  },
+  {
+   "task": "dispatch the request and handle errors",
+   "expected": [
+    "dispatch!",
+    "handle_exception!"
+   ]
+  },
+  {
+   "task": "find the template file for a view",
+   "expected": [
+    "find_template"
+   ]
+  },
+  {
+   "task": "render an erb template",
+   "expected": [
+    "erb",
+    "render"
+   ]
+  },
+  {
+   "task": "set the content type of the response",
+   "expected": [
+    "content_type"
+   ]
+  },
+  {
+   "task": "set an etag and halt if it matches",
+   "expected": [
+    "etag",
+    "etag_matches?"
+   ]
+  },
+  {
+   "task": "set the last modified header",
+   "expected": [
+    "last_modified"
+   ]
+  },
+  {
+   "task": "set cache control headers",
+   "expected": [
+    "cache_control",
+    "expires"
+   ]
+  },
+  {
+   "task": "mark the response as an attachment download",
+   "expected": [
+    "attachment"
+   ]
+  },
+  {
+   "task": "stream the response body",
+   "expected": [
+    "stream"
+   ]
+  },
+  {
+   "task": "define a before filter",
+   "expected": [
+    "before",
+    "add_filter"
+   ]
+  },
+  {
+   "task": "define a custom error handler",
+   "expected": [
+    "error"
+   ]
+  },
+  {
+   "task": "register an extension",
+   "expected": [
+    "register"
+   ]
+  }
+ ]
+}

@@ -167,6 +167,14 @@ def test_pr_comment_reports_risk_and_drift(tmp_path, monkeypatch):
     assert text.startswith(PR_COMMENT_MARK)
     assert "`src/orders/service.py::total`" in text and "Change risk:" in text
     assert "src/orders/service.py::gone` is missing" in text
+    import contextlib
+    import io
+
+    from specanvil.cli import main as cli_main
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert cli_main(["drift", str(root), "--json", "--strict"]) == 1     # machine-readable, for editors
+    assert {"spec", "ref", "issue"} <= set(json.loads(buf.getvalue())["issues"][0])
     subprocess.run(git + ["commit", "-qam", "change"], check=True)
     ix.build()
     assert "Change risk:** none" in pr_comment(root, ix, "HEAD")

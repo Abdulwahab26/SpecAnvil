@@ -1,11 +1,11 @@
-"""Head-to-head with jCodeMunch's published benchmark (benchmarks/tasks.json in jgravelle/jcodemunch-mcp).
+"""Token cost of a fixed lookup workload, measured on the text the MCP server returns.
 
-Same repos at the same pinned commits, same 5 queries, same workflow (search top 5 -> fetch top 3),
-same tokenizer (tiktoken cl100k_base), counted on the text the MCP server actually returns.
-SpecAnvil runs with session dedupe OFF (force=True) so each lookup is measured fresh, like theirs;
-a second pass reports the same 15 lookups in one session with dedupe ON.
+Three repositories at pinned commits (expressjs/express 1faf228, fastapi/fastapi a64dfbb, gin-gonic/gin 75ccf94),
+five queries each, one workflow per query: search_symbols (top 5), then fetch the top 3 symbols. That is 15 lookups.
+Tokens are counted with tiktoken cl100k_base. Session dedupe is off (force=True) so every lookup is measured fresh.
+Two passes are reported: `default` (large symbols returned as skeletons) and `uncapped` (every body in full).
 
-    python benchmarks/vs_jcodemunch.py <express> <fastapi> <gin>
+    python benchmarks/token_benchmark.py <express> <fastapi> <gin> > benchmarks/token_benchmark_results.json
 """
 import asyncio
 import json
@@ -55,7 +55,7 @@ async def run_repo(path: str, dedupe: bool, full: bool = False) -> dict:
 
 async def main(paths):
     default = [await run_repo(p, dedupe=False) for p in paths]           # default behaviour, no dedupe
-    uncapped = [await run_repo(p, dedupe=False, full=True) for p in paths]  # every body in full, like jCodeMunch
+    uncapped = [await run_repo(p, dedupe=False, full=True) for p in paths]  # every body in full
     print(json.dumps({"default": default, "uncapped": uncapped}, indent=1))
 
 

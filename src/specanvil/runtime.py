@@ -108,7 +108,7 @@ class _Mapper:
             self.by_name[r["name"]].append(row)
             self.by_qual[r["qualname"]].append(row)
             self.by_path[r["path"]].append(row)
-        self._routes = None
+        self._routes: dict | None = None
         self._file_cache: dict[str, str | None] = {}
 
     def _rel(self, f: str) -> str | None:

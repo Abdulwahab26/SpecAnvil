@@ -1,0 +1,437 @@
+{
+ "note": "Calls made through an injected dependency, written by reading the code: the call at file:line must reach `callee` defined in a file ending with `target`. For an interface-typed dependency the target is the implementation. Repos marked held_out were not looked at while the resolver was written; their cases were written first and run once.",
+ "repos": {
+  "nestjs-realworld": {
+   "repo": "lujakob/nestjs-realworld-example-app",
+   "commit": "c1c2cc4e448b279ff083272df1ac50d20c3304fa",
+   "framework": "NestJS (TypeScript)",
+   "edges": [
+    {
+     "file": "src/user/user.controller.ts",
+     "line": 23,
+     "callee": "findByEmail",
+     "target": "user/user.service.ts"
+    },
+    {
+     "file": "src/user/user.controller.ts",
+     "line": 28,
+     "callee": "update",
+     "target": "user/user.service.ts"
+    },
+    {
+     "file": "src/user/user.controller.ts",
+     "line": 34,
+     "callee": "create",
+     "target": "user/user.service.ts"
+    },
+    {
+     "file": "src/user/user.controller.ts",
+     "line": 39,
+     "callee": "delete",
+     "target": "user/user.service.ts"
+    },
+    {
+     "file": "src/user/user.controller.ts",
+     "line": 45,
+     "callee": "findOne",
+     "target": "user/user.service.ts"
+    },
+    {
+     "file": "src/user/user.controller.ts",
+     "line": 50,
+     "callee": "generateJWT",
+     "target": "user/user.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 26,
+     "callee": "findAll",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 35,
+     "callee": "findFeed",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 40,
+     "callee": "findOne",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 45,
+     "callee": "findComments",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 53,
+     "callee": "create",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 62,
+     "callee": "update",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 70,
+     "callee": "delete",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 78,
+     "callee": "addComment",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/article/article.controller.ts",
+     "line": 95,
+     "callee": "favorite",
+     "target": "article/article.service.ts"
+    },
+    {
+     "file": "src/tag/tag.controller.ts",
+     "line": 19,
+     "callee": "findAll",
+     "target": "tag/tag.service.ts"
+    },
+    {
+     "file": "src/profile/profile.controller.ts",
+     "line": 20,
+     "callee": "findProfile",
+     "target": "profile/profile.service.ts"
+    },
+    {
+     "file": "src/profile/profile.controller.ts",
+     "line": 25,
+     "callee": "follow",
+     "target": "profile/profile.service.ts"
+    }
+   ]
+  },
+  "spring-petclinic": {
+   "repo": "spring-projects/spring-petclinic",
+   "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+   "framework": "Spring (Java)",
+   "edges": [
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/vet/VetController.java",
+     "line": 69,
+     "callee": "findAll",
+     "target": "vet/VetRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/vet/VetController.java",
+     "line": 77,
+     "callee": "findAll",
+     "target": "vet/VetRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/VisitController.java",
+     "line": 66,
+     "callee": "findById",
+     "target": "owner/OwnerRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/PetTypeFormatter.java",
+     "line": 53,
+     "callee": "findPetTypes",
+     "target": "owner/PetTypeRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/PetController.java",
+     "line": 64,
+     "callee": "findPetTypes",
+     "target": "owner/PetTypeRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/PetController.java",
+     "line": 69,
+     "callee": "findById",
+     "target": "owner/OwnerRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+     "line": 67,
+     "callee": "findById",
+     "target": "owner/OwnerRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+     "line": 145,
+     "callee": "findByLastNameStartingWith",
+     "target": "owner/OwnerRepository.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java",
+     "line": 181,
+     "callee": "findById",
+     "target": "owner/OwnerRepository.java"
+    }
+   ]
+  },
+  "eshoponweb": {
+   "repo": "dotnet-architecture/eShopOnWeb",
+   "commit": "4da8212117e87d808d4bbc7da6286fd2147ce606",
+   "framework": "ASP.NET Core (C#)",
+   "edges": [
+    {
+     "file": "src/Web/Controllers/UserController.cs",
+     "line": 100,
+     "callee": "GetTokenAsync",
+     "target": "Identity/IdentityTokenClaimService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Index.cshtml.cs",
+     "line": 20,
+     "callee": "GetCatalogItems",
+     "target": "Web/Services/CachedCatalogViewModelService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Basket/Index.cshtml.cs",
+     "line": 30,
+     "callee": "GetOrCreateBasketForUser",
+     "target": "Web/Services/BasketViewModelService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Basket/Index.cshtml.cs",
+     "line": 47,
+     "callee": "AddItemToBasket",
+     "target": "ApplicationCore/Services/BasketService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Basket/Index.cshtml.cs",
+     "line": 50,
+     "callee": "Map",
+     "target": "Web/Services/BasketViewModelService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Basket/Index.cshtml.cs",
+     "line": 64,
+     "callee": "SetQuantities",
+     "target": "ApplicationCore/Services/BasketService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Basket/Checkout.cshtml.cs",
+     "line": 57,
+     "callee": "CreateOrderAsync",
+     "target": "ApplicationCore/Services/OrderService.cs"
+    },
+    {
+     "file": "src/Web/Pages/Basket/Checkout.cshtml.cs",
+     "line": 58,
+     "callee": "DeleteBasketAsync",
+     "target": "ApplicationCore/Services/BasketService.cs"
+    },
+    {
+     "file": "src/Web/Services/CachedCatalogViewModelService.cs",
+     "line": 27,
+     "callee": "GetBrands",
+     "target": "Web/Services/CatalogViewModelService.cs"
+    },
+    {
+     "file": "src/Web/Services/BasketViewModelService.cs",
+     "line": 68,
+     "callee": "ComposePicUri",
+     "target": "ApplicationCore/Services/UriComposer.cs"
+    },
+    {
+     "file": "src/Web/Services/CatalogViewModelService.cs",
+     "line": 58,
+     "callee": "ComposePicUri",
+     "target": "ApplicationCore/Services/UriComposer.cs"
+    },
+    {
+     "file": "src/Web/Areas/Identity/Pages/Account/Login.cshtml.cs",
+     "line": 114,
+     "callee": "TransferBasketAsync",
+     "target": "ApplicationCore/Services/BasketService.cs"
+    },
+    {
+     "file": "src/ApplicationCore/Services/OrderService.cs",
+     "line": 44,
+     "callee": "ComposePicUri",
+     "target": "ApplicationCore/Services/UriComposer.cs"
+    }
+   ]
+  },
+  "petclinic-kotlin": {
+   "repo": "spring-petclinic/spring-petclinic-kotlin",
+   "commit": "4246f51297aa9fd377db244699148fb0351c31de",
+   "framework": "Spring (Kotlin)",
+   "edges": [
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/vet/VetController.kt",
+     "line": 34,
+     "callee": "findAll",
+     "target": "vet/VetRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/VisitController.kt",
+     "line": 56,
+     "callee": "findById",
+     "target": "owner/PetRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/VisitController.kt",
+     "line": 74,
+     "callee": "save",
+     "target": "visit/VisitRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/PetController.kt",
+     "line": 42,
+     "callee": "findPetTypes",
+     "target": "owner/PetRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/PetController.kt",
+     "line": 46,
+     "callee": "findById",
+     "target": "owner/OwnerRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/PetController.kt",
+     "line": 77,
+     "callee": "save",
+     "target": "owner/PetRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/OwnerController.kt",
+     "line": 60,
+     "callee": "save",
+     "target": "owner/OwnerRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/OwnerController.kt",
+     "line": 74,
+     "callee": "findByLastName",
+     "target": "owner/OwnerRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/OwnerController.kt",
+     "line": 95,
+     "callee": "findById",
+     "target": "owner/OwnerRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/OwnerController.kt",
+     "line": 121,
+     "callee": "findByPetId",
+     "target": "visit/VisitRepository.kt"
+    },
+    {
+     "file": "src/main/kotlin/org/springframework/samples/petclinic/owner/PetTypeFormatter.kt",
+     "line": 43,
+     "callee": "findPetTypes",
+     "target": "owner/PetRepository.kt"
+    }
+   ]
+  },
+  "petclinic-rest": {
+   "repo": "spring-petclinic/spring-petclinic-rest",
+   "commit": "a4cb2c86272265c2916023074a771463f7114104",
+   "framework": "Spring (Java), held out",
+   "held_out": true,
+   "edges": [
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetTypeRestControllerV1.java",
+     "line": 64,
+     "callee": "findPetTypeById",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetTypeRestControllerV1.java",
+     "line": 76,
+     "callee": "savePetType",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetTypeRestControllerV1.java",
+     "line": 101,
+     "callee": "deletePetType",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/SpecialtyRestControllerV1.java",
+     "line": 67,
+     "callee": "findSpecialtyById",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/SpecialtyRestControllerV1.java",
+     "line": 104,
+     "callee": "deleteSpecialty",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VisitRestControllerV1.java",
+     "line": 68,
+     "callee": "findVisitById",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VisitRestControllerV1.java",
+     "line": 107,
+     "callee": "deleteVisit",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+     "line": 79,
+     "callee": "findOwnerByLastName",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+     "line": 81,
+     "callee": "findAllOwners",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java",
+     "line": 104,
+     "callee": "saveOwner",
+     "target": "service/ClinicServiceImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+     "line": 98,
+     "callee": "delete",
+     "target": "repository/jpa/JpaVisitRepositoryImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+     "line": 110,
+     "callee": "findAll",
+     "target": "repository/jpa/JpaVetRepositoryImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+     "line": 122,
+     "callee": "delete",
+     "target": "repository/jpa/JpaVetRepositoryImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+     "line": 135,
+     "callee": "findByLastName",
+     "target": "repository/jpa/JpaOwnerRepositoryImpl.java"
+    },
+    {
+     "file": "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java",
+     "line": 143,
+     "callee": "delete",
+     "target": "repository/jpa/JpaOwnerRepositoryImpl.java"
+    }
+   ]
+  }
+ }
+}

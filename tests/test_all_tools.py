@@ -88,3 +88,12 @@ def test_every_cli_command_runs(tmp_path, monkeypatch, capsys):
             failed.append((argv[:3], rc))
     capsys.readouterr()
     assert not failed, failed
+
+
+def test_tool_reference_is_up_to_date():
+    """docs/TOOLS.md is generated from the tool registry; regenerate with `python scripts/gen_tool_reference.py`."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    script = Path(__file__).resolve().parent.parent / "scripts" / "gen_tool_reference.py"
+    assert subprocess.run([sys.executable, str(script), "--check"]).returncode == 0

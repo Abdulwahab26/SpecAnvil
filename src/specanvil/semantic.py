@@ -183,7 +183,7 @@ def _matrix(ix: CodeIndex):
         import numpy as np
         mat = np.vstack([np.frombuffer(r["vec"], dtype=np.float32) for r in rows]) if rows else None
     except ImportError:
-        np, mat = None, [array("f", r["vec"]) for r in rows]
+        np, mat = None, [array("f", r["vec"]) for r in rows]  # type: ignore[assignment]  # no numpy: plain arrays
     meta = [{k: r[k] for k in r.keys() if k != "vec"} for r in rows]
     _cache["matrix"] = m = {"stamp": stamp, "mat": mat, "meta": meta, "np": np}
     return m

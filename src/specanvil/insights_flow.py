@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
+from typing import Any
 
 from .graph import CodeGraph
 from .index import TEST_RX, CodeIndex, split_terms
@@ -168,9 +169,9 @@ def search_columns(ix: CodeIndex, query: str = "", limit: int = 60) -> list[dict
         text = "\n".join(f.lines(p))
         for tm in SQL_TABLE_RX.finditer(text):
             for col in re.split(r",\s*\n|,(?![^(]*\))", tm.group(2)):
-                cm = re.match(r"\s*[`\"\[]?(\w+)[`\"\]]?\s+([\w()]+)", col)
-                if cm and cm.group(1).upper() not in ("PRIMARY", "FOREIGN", "UNIQUE", "CONSTRAINT", "KEY", "INDEX", "CHECK"):
-                    out.append({"table": tm.group(1), "column": cm.group(1), "type": cm.group(2), "at": p})
+                sm = re.match(r"\s*[`\"\[]?(\w+)[`\"\]]?\s+([\w()]+)", col)
+                if sm and sm.group(1).upper() not in ("PRIMARY", "FOREIGN", "UNIQUE", "CONSTRAINT", "KEY", "INDEX", "CHECK"):
+                    out.append({"table": tm.group(1), "column": sm.group(1), "type": sm.group(2), "at": p})
     seen, uniq = set(), []
     for c in out:
         k = (c["table"], c["column"])
@@ -199,7 +200,7 @@ def dependency_graph(ix: CodeIndex, path: str, depth: int = 1, direction: str = 
         top = lambda d: [{"file": k, "edges": v} for k, v in sorted(d.items(), key=lambda x: -x[1])]  # noqa: E731
         return {"folder": folder, "imports": top(outs) if direction != "in" else [],
                 "imported_by": top(ins) if direction != "out" else []}
-    out = {"file": path, "imports": [], "imported_by": []}
+    out: dict[str, Any] = {"file": path, "imports": [], "imported_by": []}
     if direction in ("both", "out"):
         seen, frontier = {path}, [path]
         for d in range(depth):

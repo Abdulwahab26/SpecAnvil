@@ -24,7 +24,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e . pytest
       - name: Prefetch the grammars the tests use
-        run: specanvil grammars python javascript typescript tsx java go --path .
+        run: specanvil grammars python javascript typescript tsx java go kotlin --path .
       - run: pytest -q
 
   evals:
@@ -63,7 +63,7 @@ jobs:
         run: python tests/mcp_v05_tools.py corpus
       - name: Default lite tier, live tier switching, OTel ingestion, regret mining, contracts, handoff (end to end)
         run: python tests/mcp_v06_tools.py corpus
-      - name: Fetch the multi-language eval corpora at pinned commits (Go, JavaScript, Python, Java, C#)
+      - name: Fetch the multi-language eval corpora at pinned commits (Go, JavaScript, Python, Java, C#, Rust, PHP, Ruby, Kotlin)
         run: |
           mkdir bench && cd bench
           fetch() { git init -q "$1" && git -C "$1" remote add origin "$2" && git -C "$1" fetch -q --depth 1 origin "$3" && git -C "$1" checkout -q FETCH_HEAD; }
@@ -72,16 +72,24 @@ jobs:
           fetch fastapi https://github.com/fastapi/fastapi a64dfbbd21a445288ff583d58e1f646fe6baf3af
           fetch spring-petclinic https://github.com/spring-projects/spring-petclinic 500158f732419217507c7656904b8e6aa1bcc0d6
           fetch eshoponweb https://github.com/dotnet-architecture/eShopOnWeb 4da8212117e87d808d4bbc7da6286fd2147ce606
-      - run: specanvil grammars go javascript python java csharp --path bench/gin
-      - name: Multi-repo retrieval gate (90 questions, 5 languages)
+          fetch mini-redis https://github.com/tokio-rs/mini-redis 3d93b42bc363220f85af4fc9e1bebd35b588a4a3
+          fetch slim https://github.com/slimphp/Slim 3675bf6baac66b07032575b7bef4200b60b7974b
+          fetch sinatra https://github.com/sinatra/sinatra cb22afd7902b566b6eaba6c4ea89739494a65d12
+          fetch petclinic-kotlin https://github.com/spring-petclinic/spring-petclinic-kotlin 4246f51297aa9fd377db244699148fb0351c31de
+          fetch nestjs-realworld https://github.com/lujakob/nestjs-realworld-example-app c1c2cc4e448b279ff083272df1ac50d20c3304fa
+          fetch petclinic-rest https://github.com/spring-petclinic/spring-petclinic-rest a4cb2c86272265c2916023074a771463f7114104
+      - run: specanvil grammars go javascript typescript python java csharp rust php ruby kotlin --path bench/gin
+      - name: Multi-repo retrieval gate (150 questions, 9 languages)
         run: python tests/evals/run_suite.py bench --min-found 0.90 --min-mrr 0.60
+      - name: Calls through injected dependencies (Spring, NestJS, ASP.NET; 66 hand-checked call sites)
+        run: python tests/evals/run_di_eval.py bench --min-recall 0.95 --max-wrong 0.05
       - name: Call-graph accuracy against runtime traces
         run: pip install pytest && python tests/evals/run_graph_eval.py --min-recall 0.85
       - name: Several sessions on one index (no lock errors)
         run: python tests/stress_concurrency.py corpus 10
 
   quality:
-    name: lint, coverage floor, type ratchet
+    name: lint, coverage floor, type check, docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -89,16 +97,19 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e . pytest pytest-cov ruff mypy
-      - run: specanvil grammars python javascript typescript tsx java go --path .
+      - run: specanvil grammars python javascript typescript tsx java go kotlin --path .
       - name: Lint (syntax errors, undefined names, unused imports, import order)
         run: ruff check src tests --select E9,F,I --target-version py310
       - name: Unit tests with a coverage floor
         run: pytest -q tests --cov=specanvil --cov-fail-under=75
-      - name: Type-check ratchet (existing errors are tolerated; new ones fail the build)
-        run: |
-          n=$(mypy src/specanvil --ignore-missing-imports | tail -1 | grep -oE 'Found [0-9]+' | grep -oE '[0-9]+' || echo 0)
-          echo "mypy errors: $n (baseline 71)"
-          test "$n" -le 71
+      - name: Type check (zero errors)
+        run: mypy src/specanvil --ignore-missing-imports
+      - name: Tool reference is generated from the registry
+        run: python scripts/gen_tool_reference.py --check
+      - name: Documentation site builds without warnings
+        run: pip install "mkdocs<2" "mkdocs-material<10" && mkdocs build --strict -d /tmp/site
+      - name: VS Code extension unit tests
+        run: node --test editors/vscode/test/drift.test.js
 
   package:
     runs-on: ubuntu-latest

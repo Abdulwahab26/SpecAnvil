@@ -1,0 +1,49 @@
+site_name: SpecAnvil
+site_description: Spec-driven development for existing repositories, with a local code-index MCP server.
+site_url: https://abdulwahab26.github.io/SpecAnvil/
+repo_url: https://github.com/Abdulwahab26/SpecAnvil
+repo_name: Abdulwahab26/SpecAnvil
+edit_uri: edit/main/docs/
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+nav:
+  - Overview: index.md
+  - Tool reference: TOOLS.md
+  - AI coding tool support: PROVIDERS.md
+  - Architecture and decisions: ARCHITECTURE.md
+  - Benchmarks and evals: BENCHMARKS.md
+  - Releasing: RELEASING.md
+
+markdown_extensions:
+  - tables
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format

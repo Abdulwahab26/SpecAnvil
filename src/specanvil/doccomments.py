@@ -57,7 +57,8 @@ def doc_above(lines: list[str], start: int) -> str:
         while j - 1 >= 0 and LINE_COMMENT_RX.match(lines[j - 1]):
             j -= 1
         for raw in lines[j:i + 1]:
-            t = _clean(LINE_COMMENT_RX.match(raw).group(2))
+            cm = LINE_COMMENT_RX.match(raw)
+            t = _clean(cm.group(2)) if cm else ""
             if t:
                 return t
     return ""

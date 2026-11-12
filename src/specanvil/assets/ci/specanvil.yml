@@ -13,10 +13,10 @@ jobs:
   spec-drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # the risk score needs the base branch and recent history
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       # Replace with your published package or fork URL
@@ -40,7 +40,7 @@ jobs:
       - run: specanvil drift --strict
       - run: specanvil docs check --strict
       - run: specanvil report
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: specanvil-report
           path: .specanvil/report.html

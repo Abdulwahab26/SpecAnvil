@@ -7,6 +7,7 @@ import re
 import subprocess
 from collections import Counter
 from statistics import median
+from typing import Any
 
 from .index import TEST_RX, CodeIndex
 from .parser import parse_source
@@ -42,20 +43,20 @@ def churn_rate(ix: CodeIndex, target: str, days: int = 90) -> dict:
         return {"target": f"{s['path']}::{s['qualname']}", "days": days, "commits": len(commits),
                 "authors": dict(authors.most_common(5)), "last_change": commits[0][2].split("\n")[0] if commits else None}
     out = _git(ix, "log", f"--since={days} days ago", "--numstat", "--format=%x1e%an%x1f%ad", "--date=short", "--", target)
-    commits, added, deleted, authors = 0, 0, 0, Counter()
+    n_commits, added, deleted, authors = 0, 0, 0, Counter()
     for block in out.split("\x1e"):
         if "\x1f" not in block:
             continue
         head, *rest = block.strip().split("\n")
         a, _ = head.split("\x1f")
-        commits += 1
+        n_commits += 1
         authors[a] += 1
         for ln in rest:
             p = ln.split("\t")
             if len(p) == 3 and p[0].isdigit():
                 added += int(p[0])
                 deleted += int(p[1])
-    return {"target": target, "days": days, "commits": commits, "lines_added": added, "lines_deleted": deleted,
+    return {"target": target, "days": days, "commits": n_commits, "lines_added": added, "lines_deleted": deleted,
             "authors": dict(authors.most_common(5))}
 
 
@@ -65,7 +66,7 @@ def provenance(ix: CodeIndex, ref: str, limit: int = 15) -> dict:
     s = _sym(ix, ref)
     out = _git(ix, "log", "--format=%x1e%h%x1f%an%x1f%ad%x1f%s%x1f%b", "--date=short", "--no-patch",
                "-L", f"{s['start_line']},{s['end_line']}:{s['path']}", timeout=120)
-    commits = []
+    commits: list[dict[str, Any]] = []
     for block in out.split("\x1e"):
         parts = block.split("\x1f")
         if len(parts) < 5:
@@ -148,7 +149,7 @@ def digest(ix: CodeIndex, since: str = "1 day ago") -> dict:
     log = _git(ix, "log", f"--since={since}", "--format=%h%x1f%an%x1f%s")
     commits = [c.split("\x1f") for c in log.splitlines() if "\x1f" in c]
     base = _git(ix, "rev-list", "-1", f"--before={since}", "HEAD").strip()
-    diff = symbol_diff(ix, base, None) if base else {"summary": "no earlier commit", "added": [], "modified": [], "removed": []}
+    diff: dict = symbol_diff(ix, base, None) if base else {"summary": "no earlier commit", "added": [], "modified": [], "removed": []}
     from .analysis import hotspots
     hot = {h["ref"] for h in hotspots(ix, days=90, limit=30)}
     touched_hot = [m["symbol"] for m in diff.get("modified", []) if m["symbol"] in hot]

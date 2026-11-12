@@ -8,6 +8,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 from .config import debug_exc, state_dir
@@ -247,6 +248,10 @@ def cmd_drift(args) -> int:
         print(f"Locked {lock_specs(root, ix, args.spec)} code references as verified.")
         return 0
     d = drift(root, ix)
+    broken = any(i["issue"] in ("missing", "changed") for i in d["issues"])
+    if args.json:  # for editors and scripts
+        print(json.dumps(d, indent=1))
+        return 1 if broken and args.strict else 0
     print(d["summary"])
     for i in d["issues"]:
         if i["issue"] != "unverified" or args.verbose:
@@ -554,9 +559,10 @@ def cmd_watch(args) -> int:
     from .index import CodeIndex
     ix = CodeIndex(_root(args))
     print(f"watching {ix.root} every {args.interval}s (Ctrl-C to stop)")
-    sem = None
+    sem: Any = None
     if args.embed:
-        from . import semantic as sem
+        from . import semantic
+        sem = semantic
     try:
         while True:
             r = ix.build()
@@ -577,6 +583,7 @@ def cmd_analyze(args) -> int:
     ix = CodeIndex(_root(args))
     ix.build()
     what = args.what
+    data: Any
     if what == "importance":
         data = graph.importance(ix, args.limit)
     elif what == "dead":
@@ -782,6 +789,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--lock", action="store_true", help="record current code as verified")
     p.add_argument("--spec", help="limit --lock to one spec file")
     p.add_argument("--strict", action="store_true", help="exit 1 on changed/missing refs (for CI)")
+    p.add_argument("--json", action="store_true", help="print the result as JSON")
     p.add_argument("-v", "--verbose", action="store_true")
     p.set_defaults(fn=cmd_drift)
 

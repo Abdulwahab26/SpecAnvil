@@ -1,0 +1,89 @@
+{
+ "repo": "spring-petclinic/spring-petclinic-kotlin",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "find owners by last name",
+   "expected": [
+    "findByLastName",
+    "processFindForm"
+   ]
+  },
+  {
+   "task": "create a new owner from a form",
+   "expected": [
+    "processCreationForm",
+    "initCreationForm"
+   ]
+  },
+  {
+   "task": "add a new pet to an owner",
+   "expected": [
+    "addPet"
+   ]
+  },
+  {
+   "task": "validate a pet's name and birth date",
+   "expected": [
+    "PetValidator",
+    "validate"
+   ]
+  },
+  {
+   "task": "book a visit for a pet",
+   "expected": [
+    "processNewVisitForm",
+    "addVisit"
+   ]
+  },
+  {
+   "task": "list all veterinarians",
+   "expected": [
+    "showHtmlVetList",
+    "showJsonVetList",
+    "findAll"
+   ]
+  },
+  {
+   "task": "show an owner's details",
+   "expected": [
+    "showOwner"
+   ]
+  },
+  {
+   "task": "update an existing owner",
+   "expected": [
+    "processUpdateOwnerForm"
+   ]
+  },
+  {
+   "task": "format the pet type for display",
+   "expected": [
+    "PetTypeFormatter",
+    "print",
+    "parse"
+   ]
+  },
+  {
+   "task": "configure the cache",
+   "expected": [
+    "CacheConfig",
+    "cacheManagerCustomizer",
+    "createCacheConfiguration"
+   ]
+  },
+  {
+   "task": "load a pet together with its visits",
+   "expected": [
+    "loadPetWithVisit",
+    "findByPetId"
+   ]
+  },
+  {
+   "task": "add a specialty to a vet",
+   "expected": [
+    "addSpecialty"
+   ]
+  }
+ ]
+}

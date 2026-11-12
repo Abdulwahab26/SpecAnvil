@@ -9,6 +9,7 @@ symbol. Presets cover common review findings in the major languages.
 from __future__ import annotations
 
 import fnmatch
+from typing import Any
 
 from .config import debug_exc
 from .index import GENERATED_RX, CodeIndex
@@ -19,7 +20,7 @@ try:  # pragma: no cover
     import tree_sitter_language_pack as tslp
 except Exception:  # noqa: BLE001
     debug_exc("astsearch:19")
-    ts = tslp = None
+    ts = tslp = None  # type: ignore[assignment]  # optional dependency: None when it is not installed
 
 JS = ("javascript", "typescript", "tsx")
 PRESETS: dict[str, dict] = {
@@ -110,7 +111,7 @@ def search(ix: CodeIndex, query: str | None = None, preset: str | None = None, l
         raise ValueError("A raw query needs language= (e.g. python, typescript, java)")
     rows = ix.db.execute("SELECT path, lang FROM files WHERE parser='tree-sitter' ORDER BY path").fetchall()
     local = local_grammars()
-    compiled: dict[str, object] = {}
+    compiled: dict[str, Any] = {}
     hits, scanned, errors = [], 0, {}
     for r in rows:
         lang, path = r["lang"], r["path"]
@@ -120,7 +121,7 @@ def search(ix: CodeIndex, query: str | None = None, preset: str | None = None, l
             continue
         if GENERATED_RX.search(path) or lang not in local:
             continue
-        pattern = query if query else PRESETS[preset].get(lang)
+        pattern = query if query else PRESETS[preset or ""].get(lang)
         if not pattern:
             continue
         if lang not in compiled:

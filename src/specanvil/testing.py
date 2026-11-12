@@ -18,6 +18,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 from .index import GENERATED_RX, TEST_RX, CodeIndex
 
@@ -112,7 +113,7 @@ def _jacoco(f: Path) -> dict:
     for pkg in tree.iter("package"):
         for sf in pkg.iter("sourcefile"):
             name = f"{pkg.get('name')}/{sf.get('name')}"
-            cov[name] = {int(l.get("nr")): int(l.get("ci", 0)) for l in sf.iter("line")}
+            cov[name] = {int(l.get("nr") or 0): int(l.get("ci") or 0) for l in sf.iter("line")}
     return cov
 
 
@@ -260,7 +261,7 @@ def safe_test_argv(command: str, root: Path, test_file: str | None = None) -> tu
     return argv, env
 
 
-REQUIRED_TOP = {"module": str, "test_framework": str, "test_command": str, "coverage_target": (int, float),
+REQUIRED_TOP: dict[str, Any] = {"module": str, "test_framework": str, "test_command": str, "coverage_target": (int, float),
                 "milestones": list}
 REQUIRED_MS = {"id": str, "title": str, "status": str, "targets": list, "test_file": str, "cases": list,
                "challenges": list, "done_when": list, "complexity": str}
@@ -375,7 +376,9 @@ def runtime_coverage(ix: CodeIndex, limit: int = 30) -> dict:
                 "(pytest --cov --cov-report=xml, vitest --coverage, jest --coverage, dotnet test /p:CollectCoverage=true)."}
     rows = ix.db.execute("SELECT id, path, qualname, kind, start_line, end_line FROM symbols WHERE kind IN "
                          "('function','method')").fetchall()
-    hot, cold, buckets = [], [], [0] * 5
+    hot: list[dict[str, Any]] = []
+    cold: list[dict[str, Any]] = []
+    buckets = [0] * 5
     for r in rows:
         lines = cov.get(r["path"]) or next((v for k, v in cov.items() if r["path"].endswith(k)), None)
         if not lines:

@@ -1,0 +1,114 @@
+{
+ "repo": "slimphp/Slim",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "run the application and emit the response",
+   "expected": [
+    "run"
+   ]
+  },
+  {
+   "task": "create an app instance with the factory",
+   "expected": [
+    "create",
+    "createFromContainer"
+   ]
+  },
+  {
+   "task": "add a route that maps HTTP methods and a pattern to a handler",
+   "expected": [
+    "map"
+   ]
+  },
+  {
+   "task": "group routes under a common pattern",
+   "expected": [
+    "group"
+   ]
+  },
+  {
+   "task": "build the URL for a named route",
+   "expected": [
+    "urlFor",
+    "relativeUrlFor",
+    "fullUrlFor"
+   ]
+  },
+  {
+   "task": "dispatch the request to find the matching route",
+   "expected": [
+    "dispatch",
+    "performRouting"
+   ]
+  },
+  {
+   "task": "parse the request body as JSON or form data",
+   "expected": [
+    "parseBody",
+    "registerBodyParser",
+    "registerDefaultBodyParsers"
+   ]
+  },
+  {
+   "task": "handle an exception thrown by the application and render an error response",
+   "expected": [
+    "handleException",
+    "ErrorMiddleware",
+    "ErrorHandler"
+   ]
+  },
+  {
+   "task": "decide the HTTP status code for an error",
+   "expected": [
+    "determineStatusCode"
+   ]
+  },
+  {
+   "task": "emit the response headers and body to the client",
+   "expected": [
+    "emit",
+    "emitHeaders",
+    "emitBody"
+   ]
+  },
+  {
+   "task": "resolve a callable from a string like Class:method",
+   "expected": [
+    "resolve",
+    "resolveSlimNotation"
+   ]
+  },
+  {
+   "task": "add middleware to the application",
+   "expected": [
+    "add",
+    "addMiddleware"
+   ]
+  },
+  {
+   "task": "override the HTTP method from a header or body parameter",
+   "expected": [
+    "MethodOverrideMiddleware"
+   ]
+  },
+  {
+   "task": "set the content length header on the response",
+   "expected": [
+    "ContentLengthMiddleware"
+   ]
+  },
+  {
+   "task": "register a custom error renderer for a content type",
+   "expected": [
+    "registerErrorRenderer"
+   ]
+  },
+  {
+   "task": "redirect one path to another URL",
+   "expected": [
+    "redirect"
+   ]
+  }
+ ]
+}

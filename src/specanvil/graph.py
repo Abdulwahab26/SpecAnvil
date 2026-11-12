@@ -12,6 +12,7 @@ import os
 import re
 from collections import defaultdict
 from pathlib import PurePosixPath
+from typing import Any
 
 JS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".d.ts")
 JS_SRC_RX = re.compile(r"""(?:from\s+|require\(\s*|import\(\s*|import\s+)['"]([^'"]+)['"]""")
@@ -23,6 +24,7 @@ RUST_RX = re.compile(r"^\s*(?:pub\s+)?use\s+(crate|super|self)?(?:::)?([\w:]+)")
 RUBY_RX = re.compile(r"""require_relative\s*\(?\s*['"]([^'"]+)['"]""")
 PHP_RX = re.compile(r"^\s*use\s+([\w\\]+)")
 FANOUT_CAP = 25
+TYPED_FANOUT = 8  # an interface call lands on each implementation; overloads share the allowance
 
 
 class Resolver:
@@ -209,9 +211,86 @@ import subprocess  # noqa: E402
 from collections import Counter, deque  # noqa: E402
 
 CALLABLE_KINDS = ("function", "method", "class", "struct")
-
+from .extract import KEYWORDS as KEYWORD_CALLEES  # noqa: E402
 
 CTOR_NAMES = {"__init__", "constructor", "initialize", "__construct", "init", "__new__"}
+
+
+# --- declared types of receivers (dependency injection, typed fields and parameters) -------------------------
+_DECL_NOISE_RX = re.compile(r"@[\w.]+(?:\([^()]*\))?|\[[A-Z]\w*(?:\([^()]*\))?\]")   # @Inject(X), @Valid, [FromServices]
+_DECL_MODS = {"private", "public", "protected", "internal", "readonly", "final", "static", "val", "var", "const", "let",
+              "override", "lateinit", "open", "volatile", "transient", "ref", "out", "in", "params", "required", "mut",
+              "abstract", "virtual", "new", "late", "this", "self"}
+TYPE_KINDS = ("class", "interface", "struct", "trait", "enum", "record", "object", "protocol")
+
+
+def _split_top(text: str, sep: str = ",") -> list[str]:
+    """Split on `sep` outside (), [], {} and <>."""
+    out: list[str] = []
+    cur: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth = max(0, depth - 1)
+        if ch == sep and depth == 0:
+            out.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    out.append("".join(cur))
+    return out
+
+
+def _params_of(signature: str) -> list[str]:
+    """Parameter declarations inside the first parenthesis pair of a signature."""
+    i = signature.find("(")
+    if i < 0:
+        return []
+    depth = 0
+    for j in range(i, len(signature)):
+        if signature[j] == "(":
+            depth += 1
+        elif signature[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return [x for x in _split_top(signature[i + 1:j]) if x.strip()]
+    return [x for x in _split_top(signature[i + 1:]) if x.strip()]  # signature was cut off: use what is there
+
+
+def _type_name(t: str) -> str:
+    """`IRepository<Basket>` -> IRepository, `app.UserService?` -> UserService, `*Store` -> Store, `Foo[]` -> Foo."""
+    t = t.strip().lstrip("*&").split("<")[0].split("[")[0].split("|")[0].strip().rstrip("?!")
+    t = re.split(r"[.:\\]", t)[-1]
+    return t if re.fullmatch(r"[A-Za-z_]\w*", t) else ""
+
+
+def typed_decl(decl: str, lang: str) -> tuple[str, str] | None:
+    """(name, type) of one field or parameter declaration, or None when it declares no type.
+    `private readonly users: UsersService` · `private final OwnerRepository owners;` · `repo UserRepo` (Go) ·
+    `private UserRepo $repo` (PHP) · `val owners: OwnerRepository` · `repo: UserRepo = Depends()`."""
+    d = _DECL_NOISE_RX.sub(" ", decl).strip().rstrip(";,").strip()
+    d = _split_top(d, "=")[0].strip()
+    words = [w for w in d.replace("\t", " ").split(" ") if w]
+    while words and words[0] in _DECL_MODS:
+        words.pop(0)
+    d = " ".join(words)
+    if not d:
+        return None
+    if ":" in d and lang not in ("go", "java", "csharp", "php", "dart", "c", "cpp"):
+        name, _, typ = d.partition(":")
+        name = name.strip().rstrip("?!").split(" ")[-1]
+    elif lang == "go":
+        if len(words) < 2:
+            return None
+        name, typ = words[0], " ".join(words[1:])
+    else:
+        if len(words) < 2:
+            return None
+        name, typ = words[-1].lstrip("$"), " ".join(words[:-1])
+    typ = _type_name(typ)
+    return (name, typ) if typ and re.fullmatch(r"[A-Za-z_]\w*", name) else None
 
 
 class CodeGraph:
@@ -242,19 +321,100 @@ class CodeGraph:
         for r in db.execute("SELECT src, dst FROM file_deps"):
             self.deps[r[0]].add(r[1])
             self.rdeps[r[1]].add(r[0])
+        self._build_types()
 
-    def resolve(self, caller_path: str, callee: str, recv: str = "", caller_parent: str = "") -> list[int]:
-        res = self._resolve(caller_path, callee, recv, caller_parent)
+    def _build_types(self) -> None:
+        """Declared types of fields, constructor parameters and parameters, so `this.users.find()` resolves to the
+        `find` of the class or interface `users` is declared as (how injected dependencies are called)."""
+        self.member_type: dict[tuple[str, str], dict[str, str]] = defaultdict(dict)   # (path, class) -> member -> type
+        self.param_type: dict[int, dict[str, str]] = {}                                 # callable id -> param -> type
+        self.types_by_name: dict[str, list[int]] = defaultdict(list)
+        self.subtypes: dict[str, set[str]] = defaultdict(set)
+        self.supertypes: dict[str, set[str]] = defaultdict(set)
+        if not self.ix.cfg.get("typed_receivers", True):
+            return
+        lang = {r[0]: r[1] for r in self.ix.db.execute("SELECT path, lang FROM files WHERE parser!='text'")}
+        for sid, s in self.sym.items():
+            if s["kind"] in TYPE_KINDS:
+                self.types_by_name[s["name"]].append(sid)
+        for r in self.ix.db.execute("SELECT cls, base FROM bases"):
+            base = _type_name(r["base"])
+            if base:
+                self.subtypes[base].add(r["cls"].rsplit(".", 1)[-1])
+                self.supertypes[r["cls"].rsplit(".", 1)[-1]].add(base)
+        for sid, s in self.sym.items():
+            lg = lang.get(s["path"], "")
+            sig = s["signature"] or ""
+            if s["kind"] in ("field", "variable", "constant") and s["parent"]:
+                td = typed_decl(sig, lg)
+                if td and td[0] == s["name"]:
+                    self.member_type[(s["path"], s["parent"])][td[0]] = td[1]
+            elif s["kind"] in ("function", "method"):
+                params = dict(filter(None, (typed_decl(p, lg) for p in _params_of(sig))))
+                if params:
+                    self.param_type[sid] = params
+                if sid in self.ctor_owner:  # constructor injection: `this.repo = repo` keeps the parameter's name
+                    owner = self.sym[self.ctor_owner[sid]]
+                    for name, typ in params.items():
+                        self.member_type[(owner["path"], owner["qualname"])].setdefault(name, typ)
+            elif s["kind"] in TYPE_KINDS and "(" in sig.split("{")[0]:  # primary constructor: class A(val repo: Repo)
+                for td in filter(None, (typed_decl(p, lg) for p in _params_of(sig.split("{")[0]))):
+                    self.member_type[(s["path"], s["qualname"])].setdefault(td[0], td[1])
+
+    def _methods_of_type(self, type_name: str, callee: str, caller_path: str) -> list[int] | None:
+        """Callables named `callee` on the type and on its implementers or subclasses; the type's own first.
+        None when the type is not in the index (the call leaves the repo)."""
+        if type_name not in self.types_by_name:
+            return None
+        names, seen = [type_name], {type_name}
+        frontier = [type_name]
+        for _ in range(3):      # implementers and subclasses: where an interface call really lands
+            frontier = [c for t in frontier for c in sorted(self.subtypes.get(t, ())) if c not in seen]
+            seen.update(frontier)
+            names += frontier
+        out = self._named_on(names, callee, caller_path)
+        if not out:             # inherited: defined on a supertype
+            frontier = [type_name]
+            for _ in range(3):
+                frontier = [c for t in frontier for c in sorted(self.supertypes.get(t, ())) if c not in seen]
+                seen.update(frontier)
+                out = self._named_on(frontier, callee, caller_path)
+                if out or not frontier:
+                    break
+        return out[:TYPED_FANOUT]
+
+    def _named_on(self, type_names: list[str], callee: str, caller_path: str) -> list[int]:
+        out = []
+        for tn in type_names:
+            owners = self.types_by_name.get(tn, [])
+            near = [o for o in owners if self.sym[o]["path"] == caller_path
+                    or self.sym[o]["path"] in self.deps.get(caller_path, ())]
+            for o in near or owners[:2]:
+                t = self.sym[o]
+                out += [c for c in self.by_name.get(callee, ()) if self.sym[c]["path"] == t["path"]
+                        and self.sym[c]["parent"] == t["qualname"] and c not in out]
+        return out
+
+    def resolve(self, caller_path: str, callee: str, recv: str = "", caller_parent: str = "", caller: int = 0) -> list[int]:
+        res = self._resolve(caller_path, callee, recv, caller_parent, caller)
         return res + [self.ctor[c] for c in res if c in self.ctor] if res else res
 
-    def _resolve(self, caller_path: str, callee: str, recv: str = "", caller_parent: str = "") -> list[int]:
+    def _resolve(self, caller_path: str, callee: str, recv: str = "", caller_parent: str = "", caller: int = 0) -> list[int]:
         cands = self.by_name.get(callee, [])
         if not cands:
             return []
+        if recv and recv not in ("self", "this", "cls", "super", "base", "me", "&"):
+            # the receiver has a declared type (a parameter, a field or an injected dependency): the call goes to
+            # that type's method or its implementers', or out of the repo when the type is not indexed
+            typ = self.param_type.get(caller, {}).get(recv) or self.member_type.get((caller_path, caller_parent), {}).get(recv)
+            if typ:
+                return self._methods_of_type(typ, callee, caller_path) or []
         if recv in ("self", "this", "cls", "me") and caller_parent:  # a method on the caller's own class
             own = [c for c in cands if self.sym[c]["path"] == caller_path and self.sym[c]["parent"] == caller_parent]
             if own:
                 return own[:1]
+        if callee in KEYWORD_CALLEES:
+            return []  # `x.get()` / `x.delete()`: too common a name to guess the target without the receiver's type
         if recv == "&":  # a function passed as a value: only a function defined in the same file
             return [c for c in cands if self.sym[c]["path"] == caller_path
                     and self.sym[c]["kind"] in ("function", "method")][:1]
@@ -282,7 +442,7 @@ class CodeGraph:
         """Resolved (caller_id, callee_id) pairs."""
         for r in self.ix.db.execute("SELECT caller_id, path, callee, recv FROM calls WHERE caller_id IS NOT NULL"):
             parent = self.sym[r["caller_id"]]["parent"] if r["caller_id"] in self.sym else ""
-            for t in self.resolve(r["path"], r["callee"], r["recv"] or "", parent):
+            for t in self.resolve(r["path"], r["callee"], r["recv"] or "", parent, r["caller_id"]):
                 if t != r["caller_id"]:
                     yield r["caller_id"], t
 
@@ -290,7 +450,7 @@ class CodeGraph:
         s = self.sym[sid]
         out = []
         for r in self.ix.db.execute("SELECT callee, line, recv FROM calls WHERE caller_id=?", (sid,)):
-            for t in self.resolve(s["path"], r["callee"], r["recv"] or "", s["parent"]):
+            for t in self.resolve(s["path"], r["callee"], r["recv"] or "", s["parent"], sid):
                 if t != sid:
                     out.append((t, r["line"]))
         return out
@@ -301,7 +461,7 @@ class CodeGraph:
         for r in self.ix.db.execute("SELECT caller_id, path, line, recv FROM calls WHERE callee=? AND caller_id IS NOT NULL",
                                     (s["name"],)):
             parent = self.sym[r["caller_id"]]["parent"] if r["caller_id"] in self.sym else ""
-            if sid in self.resolve(r["path"], s["name"], r["recv"] or "", parent) and r["caller_id"] != sid:
+            if sid in self.resolve(r["path"], s["name"], r["recv"] or "", parent, r["caller_id"]) and r["caller_id"] != sid:
                 out.append((r["caller_id"], r["line"]))
         if sid in self.ctor_owner:  # a constructor is called wherever its class is instantiated
             out += [c for c in self.callers(self.ctor_owner[sid]) if c[0] != sid and c not in out]
@@ -550,7 +710,7 @@ def cycles(ix, level: str = "file", limit: int = 20) -> list[list[str]]:
     return sccs[:limit]
 
 
-def coupling(ix, limit: int = 30) -> list[dict]:
+def coupling(ix, limit: int = 30) -> list[dict[str, Any]]:
     """Per module: afferent (Ca) and efferent (Ce) coupling and instability I = Ce / (Ca + Ce)."""
     mod = {r[0]: r[1] for r in ix.db.execute("SELECT path, module FROM files")}
     ca: dict[str, set] = defaultdict(set)
@@ -560,7 +720,7 @@ def coupling(ix, limit: int = 30) -> list[dict]:
         if ms and md and ms != md:
             ce[ms].add(md)
             ca[md].add(ms)
-    out = []
+    out: list[dict[str, Any]] = []
     for m in set(ca) | set(ce):
         a, e = len(ca[m]), len(ce[m])
         out.append({"module": m, "afferent": a, "efferent": e, "instability": round(e / (a + e), 2) if a + e else 0.0,

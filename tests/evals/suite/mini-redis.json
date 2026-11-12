@@ -1,0 +1,97 @@
+{
+ "repo": "tokio-rs/mini-redis",
+ "budget_tokens": 4000,
+ "cases": [
+  {
+   "task": "accept inbound connections and spawn a handler for each one",
+   "expected": [
+    "accept",
+    "run"
+   ]
+  },
+  {
+   "task": "read a single frame from the connection",
+   "expected": [
+    "read_frame",
+    "parse_frame"
+   ]
+  },
+  {
+   "task": "write a frame to the socket",
+   "expected": [
+    "write_frame",
+    "write_value"
+   ]
+  },
+  {
+   "task": "check whether the buffer holds a complete frame",
+   "expected": [
+    "check"
+   ]
+  },
+  {
+   "task": "set a key to a value with an optional expiration",
+   "expected": [
+    "set",
+    "set_expires"
+   ]
+  },
+  {
+   "task": "purge expired keys in a background task",
+   "expected": [
+    "purge_expired_keys",
+    "purge_expired_tasks"
+   ]
+  },
+  {
+   "task": "publish a message to a channel",
+   "expected": [
+    "publish"
+   ]
+  },
+  {
+   "task": "subscribe to one or more channels",
+   "expected": [
+    "subscribe",
+    "subscribe_to_channel"
+   ]
+  },
+  {
+   "task": "parse a command from a received frame",
+   "expected": [
+    "from_frame"
+   ]
+  },
+  {
+   "task": "wait for the shutdown notice",
+   "expected": [
+    "recv"
+   ]
+  },
+  {
+   "task": "get the next entry of the frame as a string",
+   "expected": [
+    "next_string"
+   ]
+  },
+  {
+   "task": "connect a client to the server address",
+   "expected": [
+    "connect"
+   ]
+  },
+  {
+   "task": "read a decimal number from the frame buffer",
+   "expected": [
+    "get_decimal"
+   ]
+  },
+  {
+   "task": "unsubscribe from channels",
+   "expected": [
+    "unsubscribe",
+    "make_unsubscribe_frame"
+   ]
+  }
+ ]
+}

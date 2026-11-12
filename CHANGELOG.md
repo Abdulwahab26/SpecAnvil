@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+- **Call graph follows declared types.** A call on a field, constructor parameter or parameter with a declared type goes to that type's method and to its implementations, which is how calls through injected dependencies are followed in Spring, NestJS and ASP.NET Core code. A call on a type that is not indexed produces no edge. On 66 hand-checked call sites in five repositories: 66 right and 0 wrong, against 18 right and 9 wrong before; 14 of 15 on the held-out repository at first run. New CI gate. `"typed_receivers": false` turns it off. ADR-26.
+- **Kotlin functions are indexed.** Member and top-level functions, `object` declarations and properties were missing or misnamed because the grammar's structure view reports classes only. spring-petclinic-kotlin: 0 functions before, 103 now.
+- **Retrieval gate in nine languages**: Rust (mini-redis), PHP (Slim), Ruby (Sinatra) and Kotlin (spring-petclinic-kotlin) added. 150 questions: found 0.97, MRR 0.76.
+- **Method calls named like keywords** (`repo.delete()`, `cache.get()`) are recorded when they have a receiver, and resolved only through a declared type or the caller's own class.
+- **Type check is clean**: 71 errors to 0; CI now fails on any `mypy` error.
+- **Workflow eval harness**: `tests/evals/run_workflow_eval.py prepare | score` runs a fixed ticket on a fixture repository and scores six checks (hidden acceptance tests, regression, the agent's own tests, a complete spec, drift, scope). It needs a model, so CI runs only the harness self-check; no agent score is published yet.
+- **VS Code extension** (experimental, `editors/vscode`): spec drift in the Problems panel, health report, diagrams, change risk. `specanvil drift --json` added for it.
+- **Documentation**: `docs/TOOLS.md` is generated from the tool registry and checked by a test; documentation site configuration (`mkdocs.yml`) with a strict build in CI; README and docs revised. The comparison document and third-party benchmark results were removed; the benchmark script is now `benchmarks/token_benchmark.py`.
+- GitHub Actions updated to `checkout@v7`, `setup-python@v7`, `upload-artifact@v7`, also in the workflow that `init --ci` writes.
+- 96 tools; 72 unit tests. Indexes are rebuilt once on upgrade (parser version 16).
+
 ## 0.10.0
 - **Workflows are `/sa:<name>`** (were `/sf:<name>`, from the old name) in every tool: `/sa-groom` in Copilot and Cursor, `#sa-groom` in Kiro, `sa-groom` skills in Codex and Windsurf. Shared packs are `.sapack` (old `.sfpack` files still import). **Breaking:** run `specanvil init` once in each repo; it removes the old workflow and role files it wrote and writes the new ones. Files you added yourself are left alone.
 - **Pull-request comment**: `specanvil pr-comment [--base REF] [-o file]` writes change risk per changed symbol and spec drift as Markdown. The GitHub Action from `init --ci` posts it on each pull request and updates the same comment on later pushes.
@@ -26,7 +38,7 @@
 - **Evidence in CI**: 74-question multi-repo gate, call-graph accuracy gate, concurrency stress test, lint, coverage floor (78% measured, 72% floor), type-error ratchet, weekly scheduled run; dependency upper bounds.
 - **Maintainability**: `server.py`, `insights.py` and the test file split into focused modules; `SPECANVIL_DEBUG=1` logs errors that are deliberately not raised; five unused functions found by SpecAnvil's own dead-code tool removed.
 - **Packaging**: distribution renamed `specforge-ai` (the PyPI name `specforge` belongs to another project); PyPI publishing step ready behind a repository variable. (Superseded by the 0.9.0 rename to `specanvil`.)
-- Benchmark vs jCodeMunch is now 6,799 tokens (−61%; was −66%) because results include doc comments. 96 tools; 63 unit tests.
+- The fixed lookup workload now returns 6,799 tokens (5,924 before) because results include doc comments. 96 tools; 63 unit tests.
 
 ## 0.7.0
 - **Any AI coding tool**: `specanvil init` detects Claude Code, GitHub Copilot, Cursor, Augment Code, Windsurf / Devin Local, OpenAI Codex, Kiro, Gemini CLI and Replit from their config folders (or `--agents ...`) and writes rules, workflows, role agents, skills and MCP config in each tool's native format; `specanvil agents list | add | all`.
@@ -41,16 +53,16 @@
 - **Ranking regret**: local query → fetch ledger; `suggest_corrections` (zero results, reformulations, reads outside top 5, vocabulary gaps → synonym rules, `apply=True`); config synonyms used by search and `get_context`; `tune_weights` grid-searches fusion weights on an eval file or the ledger.
 - **Tool surface**: default `lite` tier (6 tools, ~790 tokens); `set_tool_tier` switches at runtime with `notifications/tools/list_changed` and picks a tier from a model id; `run_tool` dispatcher; compact schemas (full surface 10.2k → 7.9k tokens).
 - **Cross-repo contracts**: `group_contracts` with re-export resolution. **Handoffs**: `finalize_handoff` validated against the index.
-- 92 tools; every jCodeMunch tool has an implemented equivalent (`docs/COMPARISON.md`). `tests/mcp_v06_tools.py` (in CI); 46 unit tests.
+- 92 tools. `tests/mcp_v06_tools.py` (in CI); 46 unit tests.
 
 ## 0.5.0
-- **Every jCodeMunch tool mapped**: 40 new MCP tools (83 total): `symbol_complexity`, `file_risk`, `untested_symbols`, `similar_symbols`, `related_symbols`, `extraction_candidates`, `winnow_symbols`, `entry_points`, `signal_chains`, `flow_edges`, `endpoint_impact`, `tectonic_map`, `architecture_metrics`, `repo_health`, `decorator_census`, `dependency_graph`, `find_implementations` (incl. Go implicit interfaces), `check_safety`, `parity_map`, `search_columns`, `symbol_provenance`, `symbol_diff`, `churn_rate`, `digest`, `delivery_metrics`, `render_diagram`, `audit_agent_config`, `runtime_coverage`, `plan_turn`, `suggest_queries`, `session_snapshot`, `tool_stats`, `redaction_log`, `index_status`, `file_tree`, `get_file_content`, `list_workspaces`, `cross_repo_map`, `list_packs`, `add_pack`. Mapping table in `docs/COMPARISON.md`.
+- **40 new MCP tools** (83 total): `symbol_complexity`, `file_risk`, `untested_symbols`, `similar_symbols`, `related_symbols`, `extraction_candidates`, `winnow_symbols`, `entry_points`, `signal_chains`, `flow_edges`, `endpoint_impact`, `tectonic_map`, `architecture_metrics`, `repo_health`, `decorator_census`, `dependency_graph`, `find_implementations` (incl. Go implicit interfaces), `check_safety`, `parity_map`, `search_columns`, `symbol_provenance`, `symbol_diff`, `churn_rate`, `digest`, `delivery_metrics`, `render_diagram`, `audit_agent_config`, `runtime_coverage`, `plan_turn`, `suggest_queries`, `session_snapshot`, `tool_stats`, `redaction_log`, `index_status`, `file_tree`, `get_file_content`, `list_workspaces`, `cross_repo_map`, `list_packs`, `add_pack`.
 - **Symbol coverage**: config keys (YAML / JSON / TOML / INI / `.env` names only) and documentation sections (Markdown / RST / AsciiDoc). express 712 → 994, fastapi 8,137 → 26,842, gin 1,680 → 1,960.
 - **Starter packs without installing**: 51-pack catalog, `npm:` / `pypi:` / `go:` / `gh:` at any version, `.sfpack` export / import, defensive extraction. CLI: `specanvil pack`.
 - **CLI**: `specanvil insight …` and `specanvil diagram … -o x.html`.
 - **Fixes**: grammars downloaded after the first index (e.g. by `specanvil init`) now really re-parse those files (a content-hash shortcut skipped them, leaving regex-quality symbols); CRLF files parse like LF (Windows checkouts); JS `@/` aliases in monorepos resolved inside the importing project's own `src/` (was matching files in other languages); folder targets for `symbol_complexity` / `dependency_graph`; symbol lookups prefer code over keys / sections; embeddings never mixed across models (`index_status` reports drift); first `reindex(full=True)` no longer indexes twice; route handlers requested by tests over HTTP count as tested; full rebuilds clear tables in one pass; Windows quoting for test commands.
 - **Track record**: CI (3 OSes × 3 Pythons, retrieval-eval quality gate, clean wheel smoke test), tag-driven releases, `SECURITY.md`, `CONTRIBUTING.md`; `tests/mcp_v05_tools.py` (also run in CI); 40 unit tests.
-- **Benchmarks**: −66% tokens vs jCodeMunch on its benchmark (5,924 vs 17,581); cold index 0.27 / 3.44 / 0.39 s vs 1.72 / 7.07 / 1.56 s.
+- **Benchmarks**: fixed lookup workload 5,924 tokens; cold index 0.27 / 3.44 / 0.39 s (express / fastapi / gin).
 
 ## 0.4.0
 - **Symbol coverage**: variables, constants, type aliases, fields (Python, JS/TS, JVM/C#, Go, PHP), Go struct/interface types and receiver-qualified methods, Rust/C/Ruby declarations (express 269 → 712, fastapi 5,576 → 8,137, gin 1,037 → 1,680).
@@ -61,14 +73,14 @@
 - **Sources**: dependency packs from installed versions, GitHub repos, local folders; `source=` on core tools; `specanvil source`.
 - **Watch mode**: `specanvil watch [--embed]`.
 - **Performance**: extractor regexes fixed for catastrophic backtracking (7.5 s → 0.8 s on Django); identifier table replaced by verification-time search.
-- **Benchmarks**: −65% tokens vs jCodeMunch on its benchmark (was −47%).
+- **Benchmarks**: fixed lookup workload 6,086 tokens (9,306 in 0.3).
 
 ## 0.3.0
 - **Repository documentation**: archetype detection (backend, frontend, QA automation, Azure Functions, AWS Lambda, infrastructure, library, CLI, data pipeline, mobile, worker, microservices); 44-document catalog with required sections; local fact extraction (endpoints across 9 frameworks with prefixes and handlers, env vars, Azure Functions v1/v2/isolated/Node v4 triggers, host.json, Lambda, routes, components, test inventory with tags, page objects, models, migrations, IaC resources, CI, CLI commands, queues, pipelines, auth, integrations); `doc-writer` agent on the user's docs model; `/sf:docs`; `doc_plan`/`doc_facts`/`doc_check`/`doc_register`; `specanvil docs` CLI; completeness gate and automatic staleness.
 - **Cost**: server-enforced session dedupe (reset on PreCompact), `get_symbols` batch, large-symbol skeletons, `focus=` excerpts, nested-result dedupe, tool tiers, `hotspots`, transitive `impact_of`.
 - **Retrieval**: CommonJS/prototype method extraction; search ranking by term coverage with test/example/generated down-ranking. Eval MRR 0.78 → 0.88.
 - **Security**: `local.settings.json`, `secrets.json`, publish settings never indexed.
-- **Benchmarks**: head-to-head on jCodeMunch's own benchmark (−47% tokens default, −31% full bodies; 5–7× faster cold index), `docs/COMPARISON.md`.
+- **Benchmarks**: fixed lookup workload on three pinned repositories (9,306 tokens for 15 lookups), `benchmarks/token_benchmark.py`.
 
 ## 0.2.0
 - **Indexing**: strictly local (grammars only fetched by explicit `specanvil grammars` / `init`, `--offline` mode, socket-blocking test); (size, mtime_ns) fingerprints, BLAKE2b, batched writes, WAL, parallel parsing, ripgrep fast path; fixed an O(n²) removal check. Django refresh 1.62 s → 0.09 s.

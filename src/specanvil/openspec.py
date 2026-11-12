@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from .index import STOPWORDS, TEST_RX, CodeIndex, split_terms, stem
 
@@ -48,8 +49,9 @@ def find(root: Path) -> Path | None:
 def parse_spec(text: str) -> dict:
     """A capability spec or one delta section: requirements with their text and scenarios."""
     lines = text.replace("\r\n", "\n").split("\n")
-    out = {"purpose": "", "requirements": [], "title_before_ops": False}
-    req = scn = None
+    out: dict[str, Any] = {"purpose": "", "requirements": [], "title_before_ops": False}
+    req: dict[str, Any] | None = None
+    scn: dict[str, Any] | None = None
     section = ""
     fence = False
     for i, ln in enumerate(lines, 1):
@@ -90,7 +92,7 @@ def parse_spec(text: str) -> dict:
 def parse_delta(text: str) -> dict:
     spec = parse_spec(text)
     first = next((ln for ln in text.splitlines() if ln.strip()), "")
-    delta = {"ADDED": [], "MODIFIED": [], "REMOVED": [], "RENAMED": [],
+    delta: dict[str, Any] = {"ADDED": [], "MODIFIED": [], "REMOVED": [], "RENAMED": [],
              "title_before_ops": first.startswith("# ")}
     for r in spec["requirements"]:
         if r["op"] in delta:
@@ -135,13 +137,14 @@ def changes(root: Path, archived: bool = False) -> list[dict]:
 
 
 def status(root: Path) -> dict:
-    if not find(root):
+    base = find(root)
+    if not base:
         raise ValueError("No openspec/ folder here. Run `openspec init` first, or use SpecAnvil's own specs.")
     caps = capabilities(root)
     reqs = sum(len(c["requirements"]) for c in caps.values())
     scns = sum(len(r["scenarios"]) for c in caps.values() for r in c["requirements"])
     active = changes(root)
-    arch = find(root) / "changes" / "archive"
+    arch = base / "changes" / "archive"
     return {"capabilities": len(caps), "requirements": reqs, "scenarios": scns,
             "archived_changes": sum(1 for d in arch.iterdir() if d.is_dir()) if arch.is_dir() else 0,
             "active_changes": [{"id": c["id"], "tasks": f"{c['tasks_done']}/{c['tasks_total']}",

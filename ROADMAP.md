@@ -10,19 +10,23 @@ What is planned, in rough priority order. Nothing here is promised by a date. Op
 
 ## Next: wider evidence
 - [x] C# in the multi-repo retrieval gate (0.10)
-- [ ] Rust, PHP, Ruby and Kotlin in the retrieval gate
+- [x] Rust, PHP, Ruby and Kotlin in the retrieval gate (0.11)
 - [ ] Paraphrased tasks: 8/12 with embeddings, 3/12 without. Target 10/12 and 6/12
-- [ ] A workflow eval: does `/sa:flow` on a fixed ticket in a sample repo end with passing tests
+- [x] Workflow eval harness: a fixed ticket on a fixture repo, scored on six checks (0.11)
+- [ ] Publish workflow eval scores per AI coding tool and model
 
 ## Next: hardening
-- [ ] Type errors to zero (ratchet: 100 at 0.9, lower in 0.10; see `ci.yml`)
+- [x] Type errors to zero (0.11)
 - [ ] Coverage floor to 85%
-- [ ] Call graph through dependency injection (Spring, NestJS, ASP.NET) and dynamic dispatch
+- [x] Call graph through injected dependencies with declared types: Spring, NestJS, ASP.NET Core (0.11)
+- [ ] Call graph through providers and factories, wiring by name, and receivers returned by a call
 - [ ] Secret guard for tools that add a hook system (today: Claude Code, Cursor, GitHub Copilot)
 - [ ] Connector servers for Windsurf and Codex once their project-file env syntax is documented
 
 ## Later
 - [x] Pull-request comment with change risk and spec drift from the generated GitHub Action (0.10)
-- [ ] VS Code extension: health report, diagrams and drift in the editor
-- [ ] Documentation site
+- [x] VS Code extension, experimental: drift, health report, diagrams, change risk (0.11)
+- [ ] Publish the VS Code extension to the Marketplace
+- [x] Documentation site configuration with a strict build in CI (0.11)
+- [ ] Publish the documentation site (GitHub Pages, once the repository is public)
 - [ ] HTTP transport for the MCP server (shared team index)

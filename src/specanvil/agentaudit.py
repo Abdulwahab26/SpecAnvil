@@ -12,6 +12,7 @@ import os
 import re
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from .tokens import estimate_tokens
 
@@ -24,7 +25,8 @@ PATH_RX = re.compile(r"`((?:\.{0,2}/)?[\w.\-]+(?:/[\w.\-*{}]+)+\.\w+)`")
 
 def audit(root: Path) -> dict:
     root = root.resolve()
-    findings, files = [], []
+    findings: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
     always_tokens = 0
     line_owner: dict[str, list[str]] = {}
 

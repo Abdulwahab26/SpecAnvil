@@ -251,7 +251,7 @@ class CodeIndex:
                         self.db.execute(f"DELETE FROM {t}")  # noqa: S608 - fixed table names
                 for start in range(0, len(changed), BUILD_BATCH):
                     batch: list[tuple[str, str]] = []
-                    meta: dict[str, tuple] = {}
+                    meta: dict[str, tuple[str, int, int]] = {}
                     for c in changed[start:start + BUILD_BATCH]:
                         old = stored.get(c.path)
                         try:
@@ -747,7 +747,7 @@ class CodeIndex:
         def rank(h: dict) -> float:
             hay = split_terms(h["qualname"], h["signature"], h["doc"] or "", h["path"])
             hay_words = hay.split()
-            coverage = sum(any(x.startswith(st) for x in hay_words) for st in stems)
+            coverage: float = sum(any(x.startswith(st) for x in hay_words) for st in stems)
             coverage += 0.5 * min(2, sum(any(x.startswith(st) for x in hay_words) for st in extra_stems))
             score = -coverage * 10 + h["score"] - 0.5 * min(file_score[h["path"]], 6)
             if GENERATED_RX.search(h["path"]):

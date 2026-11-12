@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from typing import Any
 
 from .detect import analyze_conventions, detect_stack
 from .index import GENERATED_RX, TEST_RX, CodeIndex
@@ -245,8 +246,8 @@ def azure_functions(fc: FactContext) -> list[dict]:
             for m in AZ_PY_RX.finditer(text):
                 kind, args = m.group(1), m.group(2)
                 if kind == "function_name":
-                    pending_name = re.search(r"""['"]([^'"]+)['"]""", args)
-                    pending_name = pending_name.group(1) if pending_name else None
+                    nm = re.search(r"""['"]([^'"]+)['"]""", args)
+                    pending_name = nm.group(1) if nm else None
                     continue
                 ln = _line(text, m.start())
                 handler = _enclosing(fc.ix, path, ln + 1) or _enclosing(fc.ix, path, ln + 2)
@@ -332,10 +333,10 @@ def routes(fc: FactContext) -> list[dict]:
             out.append({"route": m.group(1) or "/" + (m.group(2) or ""), "file": f"{path}:{_line(text, m.start())}",
                         "kind": "config"})
     seen, uniq = set(), []
-    for r in out:
-        if r["route"] not in seen:
-            seen.add(r["route"])
-            uniq.append(r)
+    for row in out:
+        if row["route"] not in seen:
+            seen.add(row["route"])
+            uniq.append(row)
     return uniq[:300]
 
 
@@ -675,8 +676,8 @@ class Facts:
     def __init__(self, ix: CodeIndex):
         self.ix = ix
         self.fc = FactContext(ix)
-        self._stack = None
-        self._cache: dict[str, object] = {}
+        self._stack: dict | None = None
+        self._cache: dict[str, Any] = {}
 
     @property
     def stack(self) -> dict:
