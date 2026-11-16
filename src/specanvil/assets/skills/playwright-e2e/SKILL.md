@@ -22,6 +22,12 @@ Never: long CSS chains, XPath, nth-child, auto-generated class names.
 - Test data via API/fixtures; each test independent and parallel-safe.
 - Name tests `AC-n: <behaviour>` and tag with `@<feature-id>`.
 
+## Evidence for `/sa:proof`
+- `specanvil proof run` runs these tests on the code before and after a change and compares, per test: the result, every API response the test saw, and every attachment named `proof:<state>`.
+- Attach the accessibility snapshot at key states: `await testInfo.attach('proof:cart', { body: await page.locator('main').ariaSnapshot(), contentType: 'text/plain' })`.
+- Keep test titles stable: a renamed test cannot be matched with its earlier run.
+- Adversarial tests live in `*.probe.spec.*` inside `test.describe('@probe <ticket>', ...)`.
+
 ## No flakes
 - Web-first assertions (`await expect(locator).toBeVisible()`), which auto-wait. No `waitForTimeout`.
 - Wait on the network only for explicit cases: `page.waitForResponse(r => r.url().includes('/api/orders') && r.ok())`.

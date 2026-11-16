@@ -31,6 +31,7 @@ theme:
 nav:
   - Overview: index.md
   - Tool reference: TOOLS.md
+  - Proof of a change: PROOF.md
   - AI coding tool support: PROVIDERS.md
   - Architecture and decisions: ARCHITECTURE.md
   - Benchmarks and evals: BENCHMARKS.md

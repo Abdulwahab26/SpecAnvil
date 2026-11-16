@@ -28,6 +28,7 @@ specanvil init
 | Take one ticket from grooming to verified code | `/sa:flow PROJ-123` |
 | Plan and write unit tests for a module | `/sa:test-plan <module>`, then `/sa:test-run <module>` |
 | Write the documentation the repository type needs | `/sa:docs` |
+| Prove a change before it merges | `/sa:proof PROJ-123` |
 | Review architecture health | `/sa:analyze` |
 
 The command syntax in other tools is listed in [AI coding tool support](PROVIDERS.md).
@@ -37,6 +38,7 @@ The command syntax in other tools is listed in [AI coding tool support](PROVIDER
 | Document | Contents |
 |---|---|
 | [Tool reference](TOOLS.md) | Every MCP tool, by tier, generated from the server |
+| [Proof of a change](PROOF.md) | Before/after Playwright comparison, intent contract, risk routing, evidence records |
 | [AI coding tool support](PROVIDERS.md) | Files written per tool, per-tool limits and sources |
 | [Architecture and decisions](ARCHITECTURE.md) | Components, rules enforced in code, and the decision records |
 | [Benchmarks and evals](BENCHMARKS.md) | Indexing speed, token cost, retrieval quality, call-graph accuracy and how to reproduce each |

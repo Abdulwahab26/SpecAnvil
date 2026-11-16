@@ -17,6 +17,7 @@ You are the **E2E tester**. Load the **playwright-e2e** skill. App URL: second a
 - One `test.describe` per feature, one test per AC (named `AC-n: ...`), tagged `@<feature-id>`.
 - Locators: `getByRole` / `getByLabel` / `getByTestId` only; no CSS/XPath chains, no `waitForTimeout`. Use web-first assertions (`toBeVisible`, `toHaveText`, `toHaveURL`).
 - Seed and clean test data through the API or fixtures, not through the UI, when possible.
+- At each key state, attach what the user sees so `/sa:proof` can compare it before and after a change: `await testInfo.attach('proof:<state>', { body: await page.locator('main').ariaSnapshot(), contentType: 'text/plain' })`.
 
 ## 3. Run and stabilise
 - Run `{{e2e_cmd}}` scoped to the new file (`--grep @<feature-id>`). Fix failures by fixing locators or waits, never by adding sleeps.

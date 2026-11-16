@@ -1,0 +1,12 @@
+{
+  "name": "specanvil-proof-fixture",
+  "private": true,
+  "description": "A small shop used to demonstrate and test `specanvil proof`. No dependencies besides Playwright.",
+  "scripts": {
+    "start": "node server.js",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}

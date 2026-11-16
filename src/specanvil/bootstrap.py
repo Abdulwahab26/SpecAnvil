@@ -22,7 +22,7 @@ from .specs import lock_specs
 
 MARK_START = "<!-- specanvil:start -->"
 MARK_END = "<!-- specanvil:end -->"
-COMMANDS = ["groom", "design", "plan", "fe", "be", "db", "qa", "e2e", "verify", "flow", "ship", "status",
+COMMANDS = ["groom", "design", "plan", "fe", "be", "db", "qa", "e2e", "proof", "verify", "flow", "ship", "status",
             "learn", "spec", "test-plan", "test-run", "backfill", "profile", "docs", "summarize", "analyze"]
 
 
@@ -267,7 +267,7 @@ def _claude_md_block(values: dict, stack: dict) -> str:
 ## Spec-driven development (SpecAnvil)
 
 Specs in `{values['specs_dir']}/` are the source of truth: `project.md`, `conventions.md`, `modules/`; features in `{values['features_dir']}/<ID>/`.
-Workflow: `/sa:groom` → `/sa:design` → `/sa:plan` → `/sa:be` + `/sa:fe` → `/sa:db` → `/sa:qa` → `/sa:e2e` → `/sa:verify` → `/sa:ship`
+Workflow: `/sa:groom` → `/sa:design` → `/sa:plan` → `/sa:be` + `/sa:fe` → `/sa:db` → `/sa:qa` → `/sa:e2e` → `/sa:proof` → `/sa:verify` → `/sa:ship`
 (or `/sa:flow <ticket>` to run the agent team end to end; `/sa:spec` for small changes; `/sa:status` for the board).
 Unit tests: `/sa:test-plan <module>` (planner model) → `/sa:test-run <module>` (executor model). History: `/sa:backfill`.
 Documentation: `/sa:docs` writes every document this repo type needs (docs model), checked by `specanvil docs check`.

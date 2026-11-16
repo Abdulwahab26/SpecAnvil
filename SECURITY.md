@@ -10,6 +10,9 @@ SpecAnvil reads source code, so its security posture is a feature. What it guara
 | Secret-looking values are redacted from tool output | `tokens.redact`; counts (never values) via the `redaction_log` tool |
 | No telemetry | no network code outside explicit `grammars`, `embed`, `pack add`, `source add gh:` commands |
 | Generated MCP config holds no secrets | `.mcp.json` uses `${ENV}` references; DB connectors default to read-only modes |
+| `specanvil proof` runs only your E2E command, never a shell | `testing.safe_test_argv`: recognised test runners, no shell operators; the app start command is split and run directly |
+| Proof never loses uncommitted work | lock in the git directory, restore in `finally`, `specanvil proof restore`; files created during a run are stashed, never deleted; `test_staged_change_is_proven_and_every_kind_of_local_work_survives` |
+| Credentials in captured API responses are not written to evidence | `proof.Masker`: password, token and key fields masked, values passed through `tokens.redact` |
 | Pack archives can't escape their folder | `packs._safe_target` rejects absolute paths and `..`; size caps per archive and per file |
 
 ## Reporting a vulnerability

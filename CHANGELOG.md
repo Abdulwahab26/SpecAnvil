@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- **Proof of a change** (`specanvil proof`, `/sa:proof`): runs the Playwright tests on the last commit and on the change, using a git stash instead of containers, and compares test results, API responses and page snapshots. Differences are sorted against an intent contract written from the ticket by an agent that cannot read code; fixed rules clear the change or route it to a person; every run writes a hash-chained evidence record with the author model, the findings, what was not checked and who approved. New agents `intent-verifier` and `adversary` (roles `intent`, `adversary`); `/sa:flow` runs proof before verify and always stops when a change is routed to a person; `/sa:verify` and `/sa:ship` use the record; the pull-request comment and `specanvil report` show it. `specanvil proof run | intent | list | show | approve | reject | hold | verify | restore`. ADR-27, `docs/PROOF.md`.
+- Demo and fixture: `tests/evals/proof` (a shop, a ticket, three planted changes) and `tests/evals/run_proof_demo.py`, which runs real Playwright. All three planted changes pass the shop's own tests; proof clears the correct one and routes the other two to a person.
+- 22 workflows (23 in an OpenSpec repo), 15 agents; 96 tools (unchanged: proof is a shell command); 84 unit tests.
+
 ## 0.11.0
 - **Call graph follows declared types.** A call on a field, constructor parameter or parameter with a declared type goes to that type's method and to its implementations, which is how calls through injected dependencies are followed in Spring, NestJS and ASP.NET Core code. A call on a type that is not indexed produces no edge. On 66 hand-checked call sites in five repositories: 66 right and 0 wrong, against 18 right and 9 wrong before; 14 of 15 on the held-out repository at first run. New CI gate. `"typed_receivers": false` turns it off. ADR-26.
 - **Kotlin functions are indexed.** Member and top-level functions, `object` declarations and properties were missing or misnamed because the grammar's structure view reports classes only. spring-petclinic-kotlin: 0 functions before, 103 now.

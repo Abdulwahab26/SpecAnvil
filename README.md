@@ -70,10 +70,11 @@ your-repo/
 ├── CLAUDE.md                    # SpecAnvil block added (your content is kept)
 ├── .mcp.json                    # specanvil + matching connectors (no secrets; ${ENV} refs)
 ├── .claude/
-│   ├── commands/sa/             # 21 commands (below); 22 in an OpenSpec repo (adds baseline)
+│   ├── commands/sa/             # 22 commands (below); 23 in an OpenSpec repo (adds baseline)
 │   ├── agents/                  # spec-analyst, architect, frontend/backend engineer, db-optimizer,
 │   │                            # qa-engineer, e2e-tester, reviewer, unit-test-planner,
-│   │                            # unit-test-executor, ticket-archaeologist, doc-writer, summarizer
+│   │                            # unit-test-executor, ticket-archaeologist, doc-writer, summarizer,
+│   │                            # intent-verifier, adversary
 │   ├── skills/                  # code-navigation, spec-writing, test-case-design,
 │   │                            # playwright-e2e, db-optimization (only your engines),
 │   │                            # <repo>-conventions, frontend-patterns, backend-patterns
@@ -101,9 +102,10 @@ The stack is detected rather than configured: languages (tree-sitter grammars, w
 | `/sa:db <id\|query\|audit>` | db-optimizer | N+1 hunt, real read-only plans via the DB MCP (Postgres, MySQL, SQL Server, MongoDB, SQLite), index migrations with rollback |
 | `/sa:qa <id>` | qa-engineer | Manual test cases using EP, BVA, decision tables, state transitions; traceability matrix; CSV for TestRail / Xray / Azure Test Plans |
 | `/sa:e2e <id>` | e2e-tester | Explores the running app with Playwright MCP, then writes role-based Playwright tests per AC and checks them for flakiness |
+| `/sa:proof <id>` | intent-verifier, adversary | Proves the change before it merges: an intent contract written from the ticket alone, the Playwright tests run on the code before and after the change (git stash, no containers), adversarial probes, fixed risk rules that clear the change or route it to a person, and a hash-chained evidence record. See [docs/PROOF.md](docs/PROOF.md) |
 | `/sa:verify <id>` | reviewer | AC → code → test table, spec drift, diff review, quality gates; PASS or numbered fixes |
 | `/sa:ship <id>` | — | PR description, changelog, release note, ticket update (asks first) |
-| `/sa:flow <ticket>` | orchestrator | Runs the whole team: groom → design → plan → parallel FE/BE + QA → E2E → verify, with human gates (or `--auto`) |
+| `/sa:flow <ticket>` | orchestrator | Runs the whole team: groom → design → plan → parallel FE/BE + QA → E2E → proof → verify, with human gates (or `--auto`; a change that proof routes to a person always stops) |
 | `/sa:test-plan <module>` | unit-test-planner (your planner model) | Deep test analysis from `test_surface` (branches, side effects, existing tests, real coverage), then executable milestones with technical challenges and approaches, schema-validated |
 | `/sa:test-run <module>` | unit-test-executor (your executor model) | Implements milestones one by one; "done" is accepted only when the tool re-runs the tests and they pass; ambiguity is escalated as `blocked`, never improvised |
 | `/sa:backfill` | ticket-archaeologist | Opt-in. Pulls Done / In Progress / In Review tickets through your ticket MCP and writes linked specs, resumable, in parallel batches |
@@ -188,6 +190,20 @@ specanvil openspec gaps                # code no capability spec mentions; /sa:b
 
 The lifecycle workflows read and write OpenSpec's files (proposal, delta specs, design, tasks) in OpenSpec's format. SpecAnvil's generated context lives in `openspec/specanvil/`. On the OpenSpec project itself, 44 capabilities, 318 requirements and 1,039 scenarios are parsed and 36% of scenarios are matched to a test.
 
+## Proof of a change
+
+`specanvil proof run <ticket>` runs the Playwright tests on the last commit and on your change, and compares what the application did: test results, API responses and page snapshots. The change is held in a git stash during the first run and put back afterwards, so nothing is built twice and no container is needed. Each difference is sorted against the intent contract (asked for, not asked for, forbidden), fixed rules score the risk, and the result is one of two routes: cleared automatically, or sent to a person with a short brief.
+
+```bash
+git add -p                                        # stage the change
+specanvil proof run SHOP-77 --author-model opus   # exit 0: cleared, 3: needs a person
+specanvil proof show                              # the evidence, as Markdown
+specanvil proof approve --by "Dana" --reason "…"  # a person's decision, recorded
+specanvil proof verify                            # the evidence chain is intact
+```
+
+Every run writes a record to `.specanvil/proof/records/`: which model wrote the change, what was compared, what was found, what was not checked and who approved it. Records are chained by hash, shown in the pull-request comment and listed in `specanvil report`. The comparison and the routing use no model. Details, settings and limits: [docs/PROOF.md](docs/PROOF.md).
+
 ## Models per role
 
 Model choices are personal, so they are stored in `~/.specanvil/profile.json` (never committed) and applied to the agents' `model:` front matter:
@@ -196,7 +212,7 @@ Model choices are personal, so they are stored in `~/.specanvil/profile.json` (n
 specanvil profile                                   # show
 specanvil profile set models.test_planner opus      # deep analysis
 specanvil profile set models.test_executor haiku    # cheap execution
-specanvil profile set models.reviewer sonnet        # any role: spec_analyst, architect, frontend, backend, db, qa, e2e, reviewer, backfill
+specanvil profile set models.reviewer sonnet        # any role: spec_analyst, architect, frontend, backend, db, qa, e2e, reviewer, backfill, intent, adversary
 specanvil profile set backfill.enabled true
 specanvil profile set backfill.statuses "Done,In Review,In Progress"
 ```
@@ -209,6 +225,7 @@ Values are validated (`opus`, `sonnet`, `haiku`, `fable`, `inherit` or a full mo
 - **Rules enforced in code.** Hooks stop the agent from reading secret files in Claude Code, Cursor and GitHub Copilot. Unit-test commands are restricted to recognised test runners and never run through a shell. A unit-test milestone is accepted as done only after the tool has run the tests. Plans are schema-checked. The full table is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Secrets.** Secret files (`.env*`, keys, keystores, credential files, Terraform state) are never indexed, and secret-looking values (private keys, cloud and API tokens, passwords, credentials in URLs) are redacted from tool output.
 - **Connectors.** Generated MCP configuration holds `${ENV_VAR}` references, never values. Database connectors default to read-only or restricted modes.
+- **Proof runs are local.** `specanvil proof` runs your E2E command directly (never through a shell, recognised test runners only), talks only to the app on your machine and makes no AI calls. Passwords, tokens and keys in captured responses are masked before a record is written; other response values from your test data are stored in the record.
 - **Code leaves the machine only through your AI coding tool**, as the snippets the agent requests.
 - **Generated specs are labelled as reverse-engineered.** They describe what the code does, which can include defects. Review them before relying on them.
 
@@ -238,7 +255,10 @@ specanvil diagram call|class|deps|modules|sequence|tectonic [target] [-o diagram
 specanvil connect                 # list the connector catalog
 specanvil connect jira figma      # add connectors to .mcp.json  (--remove to drop)
 specanvil index [--full] | detect | stats | drift [--lock] [--strict] [--json] | report | doctor | serve
-specanvil pr-comment [--base REF] [-o file]   # Markdown for a pull-request comment: change risk + spec drift
+specanvil pr-comment [--base REF] [-o file]   # Markdown for a pull-request comment: change risk + spec drift + proof
+specanvil proof run [ticket] [--scope staged|all] [--author-model M] [--calibrate] [--grep X] [--json]
+specanvil proof intent <ticket> | list | show [record] | verify | restore
+specanvil proof approve|reject|hold [record] --by NAME --reason WHY   # a person's decision, recorded in the chain
 ```
 
 Connectors: `playwright`, `github`, `jira`, `atlassian-remote`, `azure-devops`, `linear`, `gitlab`, `postgres`, `mysql`, `sqlserver`, `sqlite`, `mongodb`, `figma`, `sentry`, `context7`. The catalog is `src/specanvil/assets/connectors/catalog.json`; check package names and URLs against each vendor's current documentation before rolling out to a team.

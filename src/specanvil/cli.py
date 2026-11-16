@@ -259,6 +259,88 @@ def cmd_drift(args) -> int:
     return 1 if any(i["issue"] in ("missing", "changed") for i in d["issues"]) and args.strict else 0
 
 
+def cmd_proof(args) -> int:
+    """Proof of a change: before/after E2E comparison, intent check, risk routing, evidence chain."""
+    from . import proof as P
+    from . import proofrecord as R
+    root = _root(args)
+    a, target = args.action, args.target or ""
+    try:
+        if a == "run":
+            import signal
+            import threading
+
+            def _stop(*_):
+                raise KeyboardInterrupt
+            if threading.current_thread() is threading.main_thread() and hasattr(signal, "SIGTERM"):
+                signal.signal(signal.SIGTERM, _stop)  # a kill still runs the `finally` that restores the stash
+            try:
+                rec = P.run(root, ticket=target or args.ticket or "", scope=args.scope, intent_file=args.intent,
+                            author_model=args.author_model or "", author_tool=args.author_tool or "", grep=args.grep,
+                            calibrate=args.calibrate, allow_running=args.allow_running,
+                            log=lambda m: print(f"  {m}", file=sys.stderr, flush=True))
+            except KeyboardInterrupt:
+                print("Interrupted. Your working tree was restored; run `specanvil proof restore` if git status "
+                      "looks wrong.", file=sys.stderr)
+                return 130
+            if args.json:
+                print(json.dumps(rec, indent=2, ensure_ascii=False, default=str))
+            else:
+                print(R.render_md(root, rec))
+                print(f"Evidence: {R.records_dir(root).relative_to(root).as_posix()}/{rec['seq']:05d}-{rec['id']}.json")
+            return 0 if rec["decision"]["route"] == "auto" else 3
+        if a == "intent":
+            cand = Path(target)
+            is_file = bool(target) and (cand if cand.is_absolute() else root / cand).is_file()
+            data, src = R.load_intent(root, "" if is_file else target, target if is_file else args.intent)
+            if data is None:
+                print(f"No intent contract yet. Expected at {R.intent_path(root, target).relative_to(root).as_posix()}",
+                      file=sys.stderr)
+                return 1
+            rules = data["rules"]
+            print(f"valid · {src} · {sum(r['expect'] == 'change' for r in rules)} change rules, "
+                  f"{sum(r['expect'] == 'no_change' for r in rules)} must-not-change rules"
+                  + (f" · {len(data['unclear'])} open questions (the change will be routed to review)"
+                     if data.get("unclear") else ""))
+            return 0
+        if a == "list":
+            recs = [r for r in R.load_records(root) if r.get("type") == "proof"]
+            if not recs:
+                print("No proof records yet. Run `specanvil proof run`.")
+            for r in recs[-(args.limit or 20):]:
+                print(f"  {r['seq']:>4}  {r['id']}  {r['ticket'] or '-':<12} risk {r['risk']['score']:>3} "
+                      f"{r['risk']['level']:<6}  {R.status_of(root, r)}")
+            return 0
+        if a == "show":
+            shown = R.find_record(root, target)
+            if not shown:
+                print("No matching proof record. See `specanvil proof list`.", file=sys.stderr)
+                return 1
+            if args.json:
+                print(json.dumps({k: v for k, v in shown.items() if k != "_file"}, indent=2, ensure_ascii=False))
+            else:
+                print(R.render_md(root, shown))
+            return 0
+        if a in ("approve", "reject", "hold"):
+            ref = R.find_record(root, target)
+            d = R.decide(root, ref["id"] if ref else target, a, args.by or R._git_user(root), args.reason or "")
+            print(f"{a} recorded for {d['ref']} by {d['by']}" + (" (overrides the routing)" if d["overrides_routing"] else ""))
+            return 0
+        if a == "verify":
+            errs = R.verify_chain(root)
+            n = len(R.load_records(root))
+            print(f"evidence chain intact: {n} records" if not errs else "\n".join(f"  ✘ {e}" for e in errs))
+            return 1 if errs else 0
+        if a == "restore":
+            for note in P.restore(root):
+                print(note)
+            return 0
+    except (P.ProofError, ValueError) as e:
+        print(f"proof: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_pr_comment(args) -> int:
     from .index import CodeIndex
     from .report import pr_comment
@@ -878,6 +960,26 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--depth", type=int, default=2)
     p.add_argument("-o", "--out")
     p.set_defaults(fn=cmd_diagram)
+
+    p = sub.add_parser("proof", help="prove a change: run | intent | list | show | approve | reject | hold | verify | restore")
+    p.add_argument("action", choices=["run", "intent", "list", "show", "approve", "reject", "hold", "verify", "restore"])
+    p.add_argument("target", nargs="?", help="ticket id (run, intent) or record id (show, approve, reject, hold)")
+    p.add_argument("--ticket", help="ticket id, if not given as the target")
+    p.add_argument("--scope", choices=["staged", "all"], default="staged",
+                   help="what to prove: the staged change (default) or everything uncommitted")
+    p.add_argument("--intent", help="path of the intent contract (default: the ticket's feature folder)")
+    p.add_argument("--author-model", help="the model that wrote the change, recorded in the evidence")
+    p.add_argument("--author-tool", help="the AI coding tool that wrote the change")
+    p.add_argument("--grep", help="only run E2E tests matching this (passed to Playwright --grep)")
+    p.add_argument("--calibrate", action="store_true",
+                   help="run the old code twice and ignore values that differ on their own")
+    p.add_argument("--allow-running", action="store_true", help="run even if something already listens on the app URL")
+    p.add_argument("--by", help="who approves/rejects (default: git user)")
+    p.add_argument("--reason", help="why (required for approve, reject, hold)")
+    p.add_argument("--limit", type=int, help="list: how many records")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--path")
+    p.set_defaults(fn=cmd_proof)
 
     p = sub.add_parser("hook", help="internal: Claude Code hook handler")
     p.add_argument("event")

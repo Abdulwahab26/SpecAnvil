@@ -23,6 +23,13 @@ What is planned, in rough priority order. Nothing here is promised by a date. Op
 - [ ] Secret guard for tools that add a hook system (today: Claude Code, Cursor, GitHub Copilot)
 - [ ] Connector servers for Windsurf and Codex once their project-file env syntax is documented
 
+## Next: proof of a change
+- [x] Before/after Playwright comparison on a git stash, intent contract, risk routing, evidence chain
+- [ ] Run proof in CI on pull requests (base branch against the PR head, in a worktree)
+- [ ] Line coverage of the changed code in every record
+- [ ] Measure on 20 to 30 AI-written pull requests with planted defects: caught, missed, false alarms
+- [ ] Proof for repositories without Playwright (recorded HTTP requests replayed against both versions)
+
 ## Later
 - [x] Pull-request comment with change risk and spec drift from the generated GitHub Action (0.10)
 - [x] VS Code extension, experimental: drift, health report, diagrams, change risk (0.11)

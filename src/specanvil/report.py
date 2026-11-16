@@ -70,7 +70,27 @@ def write_report(root: Path, ix: CodeIndex | None = None) -> Path:
     missing = sum(i["issue"] == "missing" for i in issues)
     savings_tile = f"{sv['saved_pct']}%" if sv["calls"] else "—"
     flow = "".join(f"<span>/sa:{c}</span><em>→</em>" for c in
-                   ["groom", "design", "plan", "be + fe", "db", "qa", "e2e", "verify", "ship"])[:-10]
+                   ["groom", "design", "plan", "be + fe", "db", "qa", "e2e", "proof", "verify", "ship"])[:-10]
+
+    from . import proofrecord as _proof
+    proofs = [r for r in _proof.load_records(root) if r.get("type") == "proof"]
+    chain_errs = _proof.verify_chain(root) if proofs else []
+
+    def _proof_row(r: dict) -> str:
+        by = r["behaviour"]["by_class"]
+        status = _proof.status_of(root, r)
+        cls = "ok" if status.startswith(("cleared", "approved")) else "bad" if status.startswith("rejected") else "warn"
+        return (f"<tr><td><code>{_e(r['id'])}</code></td><td>{_e(r['ticket'] or '-')}</td>"
+                f"<td class={cls}>{_e(status)}</td><td>{r['risk']['score']} ({_e(r['risk']['level'])})</td>"
+                f"<td>{by.get('intended', 0)}</td><td>{by.get('unintended', 0) + by.get('violation', 0)}</td>"
+                f"<td>{by.get('regression', 0)}</td><td>{len(r['probes'])}</td>"
+                f"<td>{_e(r['author'].get('model') or '-')}</td></tr>")
+    proof_rows = "".join(_proof_row(r) for r in reversed(proofs[-25:])) or \
+        "<tr><td colspan=9 class=sub>No proof records yet. Run /sa:proof or `specanvil proof run`.</td></tr>"
+    auto = sum(r["decision"]["route"] == "auto" for r in proofs)
+    proof_note = (f"{len(proofs)} changes proven · {auto} cleared automatically · {len(proofs) - auto} routed to a person · "
+                  + ("<b class=ok>evidence chain intact</b>" if not chain_errs else
+                     f"<b class=bad>evidence chain broken: {_e(chain_errs[0])}</b>")) if proofs else ""
 
     page = f"""<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>SpecAnvil report</title><style>{CSS}</style></head><body><main>
@@ -91,6 +111,7 @@ def write_report(root: Path, ix: CodeIndex | None = None) -> Path:
 </div>
 <h2>Token savings by tool</h2><div class=panel><table><tr><th>Tool</th><th>Calls</th><th>Returned</th><th>Whole-file baseline</th><th>Saved</th></tr>{tool_rows}</table></div>
 <h2>Modules &amp; spec coverage</h2><div class=panel><table><tr><th>Module</th><th>Files</th><th>Lines</th><th>Symbols</th><th>Spec</th></tr>{mod_rows}</table></div>
+<h2>Proof of changes</h2><div class=panel><p class=sub>{proof_note}</p><table><tr><th>Record</th><th>Ticket</th><th>Status</th><th>Risk</th><th>Asked for</th><th>Not asked for</th><th>Regressions</th><th>Failed probes</th><th>Written by</th></tr>{proof_rows}</table></div>
 <div class=two>
 <div><h2>Spec drift</h2><div class=panel>
 <p><b class=ok>{dr['verified_refs']}</b> verified refs · <b class=warn>{changed}</b> changed · <b class=bad>{missing}</b> missing</p>
@@ -136,6 +157,18 @@ def pr_comment(root: Path, ix, base: str = "HEAD") -> str:
         out += ["", "Update the spec, then run `specanvil drift --lock`."]
     else:
         out.append("**Spec drift:** none. Every code reference in the specs still matches.")
+    try:
+        from . import proofrecord as _proof
+        added = _proof.records_added_since(root, base)
+        if added:
+            out += ["", f"## Proof of this change ({len(added)} record{'s' if len(added) != 1 else ''})", ""]
+            for rec in added[-3:]:
+                out += [_proof.render_md(root, rec, full=False)]
+            errs = _proof.verify_chain(root)
+            out.append("Evidence chain intact." if not errs else f"**Evidence chain broken:** {errs[0]}")
+    except Exception:  # noqa: BLE001 - the proof section must never cost the risk and drift comment
+        from .config import debug_exc
+        debug_exc("report:pr_comment proof")
     out += ["", "<sub>Computed locally in CI from the code index. No AI calls. "
             f"Risk weights: {risk.get('weights', 'n/a')}.</sub>"]
     return "\n".join(out) + "\n"

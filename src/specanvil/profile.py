@@ -35,6 +35,8 @@ ROLES = {
     "backfill": "ticket-archaeologist",
     "docs": "doc-writer",
     "summarizer": "summarizer",
+    "intent": "intent-verifier",
+    "adversary": "adversary",
 }
 
 DEFAULTS: dict = {
@@ -43,6 +45,7 @@ DEFAULTS: dict = {
         "test_executor": "haiku",   # follows explicit milestones: cheap and fast
         "docs": "sonnet",           # long-form writing from extracted facts
         "summarizer": "haiku",      # one-line summaries: high volume, simple
+        "intent": "sonnet",         # reads only the ticket; set it to a model other than the one writing your code
     },
     "backfill": {
         "enabled": False,           # opt-in: pulling ticket history is never automatic

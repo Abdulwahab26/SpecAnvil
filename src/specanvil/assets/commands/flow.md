@@ -1,5 +1,5 @@
 ---
-description: Run the whole agent team on one ticket - groom, design, plan, parallel FE/BE build, QA, E2E, verify - with human gates
+description: Run the whole agent team on one ticket - groom, design, plan, parallel FE/BE build, QA, E2E, proof, verify - with human gates
 argument-hint: <ticket-id | idea> [--auto]
 ---
 
@@ -17,12 +17,14 @@ Keep a live checklist with TaskCreate/TaskUpdate (or a todo list) so progress is
 4. **Build in parallel** → for tasks marked `(parallel)`, run `backend-engineer` and `frontend-engineer` at the same time, each with only its task ids and the spec paths (not whole conversations). Run `db-optimizer` on every new or changed query. Sequential tasks run in order.
 5. **QA** → `qa-engineer` (`/sa:qa`) can start as soon as the plan exists, in parallel with the build.
 6. **E2E** → `e2e-tester` (`/sa:e2e`) once FE and BE tasks are done.
-7. **Verify** → `reviewer` (`/sa:verify`). If CHANGES NEEDED, route each fix to the right engineer and verify again (max 3 rounds, then stop and report).
+7. **Proof** → follow `/sa:proof` with `--scope all`: `intent-verifier` writes the intent contract from the ticket alone, `adversary` writes probes, then `specanvil proof run` compares the app before and after the change. Route real findings to the engineer that owns the code and run it again (max 2 rounds). **Gate 3**: if the change is still routed to a person, show the brief and stop, even with `--auto`: only a person can approve it.
+8. **Verify** → `reviewer` (`/sa:verify`). If CHANGES NEEDED, route each fix to the right engineer and verify again (max 3 rounds, then stop and report).
 
 ## Rules
 - Hand each subagent the feature folder path and its task ids; tell it to use the specanvil MCP (`get_context`, `get_symbol`) rather than reading whole files.
 - Subagents update specs (tasks ticked, Code map) as they go; you re-read only the sections you need.
 - Never push, merge, deploy, or write to shared databases or tickets without asking.
+- No agent approves its own work: the engineer agents do not write the intent contract or the probes, and no agent runs `specanvil proof approve`.
 
 ## Final report
-Feature folder, AC coverage table, tests added and their results, DB findings, open risks, and the `token_savings` summary for this run. Suggest `/sa:ship <id>`.
+Feature folder, AC coverage table, tests added and their results, DB findings, the proof result (status, differences nobody asked for, failed probes), open risks, and the `token_savings` summary for this run. Suggest `/sa:ship <id>`.

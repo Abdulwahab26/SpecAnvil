@@ -1,0 +1,19 @@
+{
+  "ticket": "SHOP-77",
+  "model": "sonnet",
+  "kind": "feature",
+  "summary": "Gold customers get 15% off instead of 10% when the order subtotal is 100.00 or more.",
+  "rules": [
+    {"id": "R1", "expect": "change", "text": "Quotes for gold customers with a subtotal of 100.00 or more use a 15% discount.",
+     "match": {"endpoint": "GET /api/quote*customer=gold*"}},
+    {"id": "R2", "expect": "change", "text": "The page shows the new total and discount for a large gold order.",
+     "match": {"test": "*gold customer*", "kind": "snapshot"}},
+    {"id": "R3", "expect": "no_change", "text": "Gold orders under 100.00 keep the 10% discount.",
+     "match": {"test": "*small gold order*"}},
+    {"id": "R4", "expect": "no_change", "text": "Quotes for standard customers do not change.",
+     "match": {"endpoint": "GET /api/quote*customer=standard*"}},
+    {"id": "R5", "expect": "no_change", "text": "Quotes for silver customers do not change.",
+     "match": {"endpoint": "GET /api/quote*customer=silver*"}}
+  ],
+  "unclear": []
+}
