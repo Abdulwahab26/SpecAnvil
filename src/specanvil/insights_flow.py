@@ -21,6 +21,8 @@ from .insights import (
 def endpoint_impact(ix: CodeIndex, endpoint: str, depth: int = 3) -> dict:
     """What breaks if this HTTP endpoint changes: handler, everything it calls, frontend callers, tests, specs."""
     from .facts import Facts
+    if not endpoint or not endpoint.strip():
+        raise ValueError("endpoint is required, for example 'POST /api/v1/users/'")
     eps = Facts(ix).get("endpoints")
     method, _, path = endpoint.strip().partition(" ") if " " in endpoint.strip() else ("", "", endpoint.strip())
     match = [e for e in eps if e["path"].rstrip("/") == path.rstrip("/") and (not method or e["method"] == method.upper())]

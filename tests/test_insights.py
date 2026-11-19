@@ -249,3 +249,43 @@ def test_search_columns_reads_sql_migrations(tmp_path):
     cols = {(c["table"], c["column"]): c["type"] for c in search_columns(ix)}
     assert cols[("orders", "buyer_id")].startswith("VARCHAR") and ("orders", "total") in cols
     assert ("orders", "PRIMARY") not in cols
+
+
+def test_audit_agent_config_does_not_flag_existing_dot_directory_paths(tmp_path):
+    """Regression: lstrip('./') turned '.claude/commands/x.md' into 'claude/commands/x.md' and reported a false missing path."""
+    from specanvil import agentaudit
+
+    (tmp_path / ".claude" / "commands").mkdir(parents=True)
+    (tmp_path / ".claude" / "commands" / "design.md").write_text("# design\n")
+    (tmp_path / "CLAUDE.md").write_text("Run the workflow in `.claude/commands/design.md` before coding.\n")
+    findings = agentaudit.audit(tmp_path)["findings"]
+    assert not [f for f in findings if "missing path" in f["issue"]]
+
+
+def test_audit_agent_config_still_flags_a_really_missing_path(tmp_path):
+    from specanvil import agentaudit
+
+    (tmp_path / "CLAUDE.md").write_text("See `.claude/commands/ghost.md` for the steps.\n")
+    findings = agentaudit.audit(tmp_path)["findings"]
+    assert any("ghost.md" in f["issue"] for f in findings)
+
+
+def test_endpoint_impact_without_an_argument_is_a_clear_error(tmp_path):
+    from specanvil.insights import endpoint_impact
+
+    ix = CodeIndex(_insight_repo(tmp_path))
+    ix.build()
+    for missing in (None, "", "   "):
+        with pytest.raises(ValueError, match="endpoint is required"):
+            endpoint_impact(ix, missing)
+
+
+@pytest.mark.parametrize("what", ["safety", "endpoint", "provenance", "churn", "trace-import"])
+def test_insight_commands_that_need_a_target_print_a_hint_not_a_traceback(tmp_path, capsys, what):
+    from specanvil.cli import main as cli_main
+
+    root = _insight_repo(tmp_path)
+    assert cli_main(["insight", what, "--path", str(root)]) == 2
+    err = capsys.readouterr().err
+    assert f"'insight {what}' needs a target" in err
+    assert "Traceback" not in err

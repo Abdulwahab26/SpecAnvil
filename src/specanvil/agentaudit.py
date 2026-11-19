@@ -23,6 +23,13 @@ MCP_SCHEMA_ESTIMATE = {"specanvil": 1400, "playwright": 3500, "github": 6000, "j
 PATH_RX = re.compile(r"`((?:\.{0,2}/)?[\w.\-]+(?:/[\w.\-*{}]+)+\.\w+)`")
 
 
+def _strip_dot_slash(p: str) -> str:
+    """Drop only a leading './' or '../' prefix. str.lstrip('./') would also eat the dot of '.claude/'."""
+    while p.startswith(("./", "../")):
+        p = p[2:] if p.startswith("./") else p[3:]
+    return p
+
+
 def audit(root: Path) -> dict:
     root = root.resolve()
     findings: list[dict[str, Any]] = []
@@ -44,7 +51,7 @@ def audit(root: Path) -> dict:
             p = m.group(1)
             if "*" in p or "{" in p or p.startswith(("specs/features/", "docs/")):
                 continue
-            if not (root / p.lstrip("./")).exists():
+            if not (root / _strip_dot_slash(p)).exists():
                 findings.append({"severity": "medium", "file": rel, "issue": f"references missing path `{p}`",
                                  "fix": "update or remove the reference; agents waste turns looking for it"})
 

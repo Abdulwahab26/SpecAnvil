@@ -712,9 +712,22 @@ def cmd_pack(args) -> int:
     return 0
 
 
+# insight commands that need a target, with a hint shown when it is missing (instead of a Python traceback)
+INSIGHT_NEEDS_TARGET = {
+    "safety": "a symbol, for example 'backend/app/crud.py::create_user' (with --action edit|delete|rename)",
+    "endpoint": "an HTTP endpoint, for example 'POST /api/v1/users/'",
+    "provenance": "a symbol, for example 'backend/app/crud.py::create_user'",
+    "churn": "a file path, for example 'backend/app/crud.py'",
+    "trace-import": "an OpenTelemetry trace file (OTLP JSON, JSONL or gzip)",
+}
+
+
 def cmd_insight(args) -> int:
     from . import agentaudit, history, insights, regret, runtime
     from .index import CodeIndex
+    if args.what in INSIGHT_NEEDS_TARGET and not (args.target or "").strip():
+        print(f"error: 'insight {args.what}' needs a target: {INSIGHT_NEEDS_TARGET[args.what]}", file=sys.stderr)
+        return 2
     ix = CodeIndex(_root(args))
     ix.build()
     w, t = args.what, args.target
