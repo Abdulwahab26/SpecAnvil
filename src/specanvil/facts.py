@@ -128,9 +128,16 @@ def _line(text: str, pos: int) -> int:
 def _handler(ix: CodeIndex, path: str, line: int) -> str:
     """The function a route decorator/annotation belongs to: the next symbol defined within a few lines,
     else the smallest symbol containing the line (annotations inside a method's range)."""
-    row = ix.db.execute("SELECT qualname FROM symbols WHERE path=? AND start_line<=? AND end_line>=? AND start_line>=? "
-                        "AND kind IN ('function','method') ORDER BY start_line DESC LIMIT 1",
+    row = ix.db.execute("SELECT qualname, start_line, end_line FROM symbols WHERE path=? AND start_line<=? AND end_line>=? "
+                        "AND start_line>=? AND kind IN ('function','method') ORDER BY start_line DESC LIMIT 1",
                         (path, line, line, line - 3)).fetchone()  # annotation is the first line(s) of the method
+    if row and row["start_line"] < line == row["end_line"]:
+        # Some grammars end the previous method on the line of the next method's annotation. If a method starts
+        # right after this line, the annotation belongs to that one, not to the symbol that merely ends here.
+        nxt = ix.db.execute("SELECT qualname FROM symbols WHERE path=? AND start_line>? AND start_line<=? "
+                            "AND kind IN ('function','method') ORDER BY start_line LIMIT 1", (path, line, line + 3)).fetchone()
+        if nxt:
+            return nxt["qualname"]
     if row:
         return row["qualname"]
     row = ix.db.execute("SELECT qualname FROM symbols WHERE path=? AND start_line>? AND start_line<=? "

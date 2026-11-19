@@ -289,3 +289,29 @@ def test_insight_commands_that_need_a_target_print_a_hint_not_a_traceback(tmp_pa
     err = capsys.readouterr().err
     assert f"'insight {what}' needs a target" in err
     assert "Traceback" not in err
+
+
+def test_insight_list_shows_every_command_without_building_an_index(tmp_path, capsys):
+    from specanvil.cli import INSIGHT_CATALOG, INSIGHT_NEEDS_TARGET, main as cli_main
+
+    assert cli_main(["insight", "list", "--path", str(tmp_path / "does-not-exist")]) == 0
+    out = capsys.readouterr().out
+    for name in INSIGHT_CATALOG:
+        assert name in out
+    assert set(INSIGHT_NEEDS_TARGET) <= set(INSIGHT_CATALOG)
+
+
+def test_unknown_insight_suggests_the_closest_command(tmp_path, capsys):
+    from specanvil.cli import main as cli_main
+
+    assert cli_main(["insight", "healht", "--path", str(tmp_path)]) == 2
+    err = capsys.readouterr().err
+    assert "Did you mean: health" in err and "insight list" in err
+
+
+def test_go_struct_is_not_treated_as_an_interface(tmp_path):
+    from specanvil import insights as I
+    (tmp_path / "s.go").write_text("package s\n\ntype Box struct {\n\tWidth int\n}\n\nfunc (b Box) Area() int { return b.Width }\n")
+    ix = CodeIndex(tmp_path)
+    ix.build()
+    assert I.find_implementations(ix, "Box")["implementations"] == []

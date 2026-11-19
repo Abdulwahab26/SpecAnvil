@@ -722,9 +722,44 @@ INSIGHT_NEEDS_TARGET = {
 }
 
 
+# every insight command: (one-line summary, target kind or None when no target is needed)
+INSIGHT_CATALOG = {
+    "health": ("repo-wide health score", None), "untested": ("symbols with no test reference", "optional path"),
+    "similar": ("near-duplicate symbols", "symbol"), "complexity": ("most complex symbols", "optional symbol"),
+    "extract": ("extract-function candidates", None), "entry": ("entry points", None),
+    "chains": ("signal chains from a symbol", "symbol"), "tectonic": ("module fault lines", None),
+    "architecture": ("coupling and layering metrics", None), "decorators": ("decorator census", None),
+    "flow": ("data-flow edges", None), "columns": ("search DB columns", "optional text"),
+    "safety": ("is an edit/delete/rename safe", "symbol"), "endpoint": ("blast radius of an HTTP endpoint", "endpoint"),
+    "risk-file": ("risk score for a file", "file"), "provenance": ("who/why a symbol changed", "symbol"),
+    "diff": ("symbol-level git diff", "optional rev"), "digest": ("what changed since a date", "optional date"),
+    "delivery": ("delivery metrics", None), "churn": ("change rate of a file", "file"),
+    "audit": ("audit the agent config", None), "trace-import": ("import an OpenTelemetry trace", "trace file"),
+    "hot": ("hot paths from traces", None), "unused": ("paths never executed", None),
+    "corrections": ("suggest retrieval corrections", None), "tune": ("tune ranking weights", "optional eval file"),
+    "contracts": ("group contracts", None),
+}
+
+
+def _insight_list() -> str:
+    width = max(len(k) for k in INSIGHT_CATALOG)
+    rows = [f"{k.ljust(width)}  {desc}" + (f"   <{need}>" if need and not need.startswith("optional") else "")
+            for k, (desc, need) in sorted(INSIGHT_CATALOG.items())]
+    return "\n".join(rows)
+
+
 def cmd_insight(args) -> int:
     from . import agentaudit, history, insights, regret, runtime
     from .index import CodeIndex
+    if args.what == "list":
+        print(_insight_list())
+        return 0
+    if args.what not in INSIGHT_CATALOG:
+        import difflib
+        near = difflib.get_close_matches(args.what, list(INSIGHT_CATALOG), n=3, cutoff=0.5)
+        hint = f" Did you mean: {', '.join(near)}?" if near else ""
+        print(f"error: unknown insight '{args.what}'.{hint} Run 'specanvil insight list' to see all of them.", file=sys.stderr)
+        return 2
     if args.what in INSIGHT_NEEDS_TARGET and not (args.target or "").strip():
         print(f"error: 'insight {args.what}' needs a target: {INSIGHT_NEEDS_TARGET[args.what]}", file=sys.stderr)
         return 2

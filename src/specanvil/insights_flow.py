@@ -228,6 +228,7 @@ def dependency_graph(ix: CodeIndex, path: str, depth: int = 1, direction: str = 
     return out
 
 
+GO_INTERFACE_DECL_RX = re.compile(r"^\s*type\s+\w+(?:\[[^\]]*\])?\s+interface\b")
 GO_IFACE_METHOD_RX = re.compile(r"^\s*([A-Z]\w*)\s*\(", re.M)
 
 
@@ -239,8 +240,12 @@ def find_implementations(ix: CodeIndex, name: str) -> dict:
         "SELECT DISTINCT cls, path FROM bases WHERE base=?", (iface,))]
     row = ix.db.execute("SELECT path, start_line, end_line, kind FROM symbols WHERE name=? AND kind IN "
                         "('interface','trait','class','struct') LIMIT 1", (iface,)).fetchone()
-    if row and row["path"].endswith(".go") and row["kind"] == "interface":
+    if row and row["path"].endswith(".go") and row["kind"] in ("interface", "class", "struct"):
         f = Files(ix)
+        # newer grammars label Go interfaces 'class'; trust the declaration text, not the kind label
+        if not GO_INTERFACE_DECL_RX.match(f.lines(row["path"])[row["start_line"] - 1]):
+            row = None
+    if row and row["path"].endswith(".go"):
         body = "\n".join(f.lines(row["path"])[row["start_line"]:row["end_line"] - 1])
         needed = set(GO_IFACE_METHOD_RX.findall(body))
         if needed:
